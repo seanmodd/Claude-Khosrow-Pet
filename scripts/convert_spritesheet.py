@@ -13,7 +13,7 @@ same alpha. PNG is written with no additional filtering ambiguity so the output
 is byte-reproducible on any machine with the same Pillow.
 
 Outputs (by default):
-  app/Sources/KhosrowApp/Resources/khosrow-spritesheet.png
+  app/Sources/KhosrowKit/Resources/khosrow-spritesheet.png
 
 Verifies and prints: dimensions, mode, alpha presence, and that every RGBA
 pixel matches the source after round-trip.
@@ -28,7 +28,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 
-DEFAULT_OUT = "app/Sources/KhosrowApp/Resources/khosrow-spritesheet.png"
+DEFAULT_OUT = "app/Sources/KhosrowKit/Resources/khosrow-spritesheet.png"
 
 
 def sha256_bytes(b: bytes) -> str:

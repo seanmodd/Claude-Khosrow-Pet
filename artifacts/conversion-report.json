@@ -10,7 +10,7 @@
     ]
   },
   "output": {
-    "path": "app/Sources/KhosrowApp/Resources/khosrow-spritesheet.png",
+    "path": "app/Sources/KhosrowKit/Resources/khosrow-spritesheet.png",
     "sha256": "61e29679da600745de6083203eac725fab0ec7651cae0d24faf75d590e9b1534",
     "size": [
       1536,

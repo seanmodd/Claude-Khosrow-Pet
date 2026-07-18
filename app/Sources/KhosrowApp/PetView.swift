@@ -1,0 +1,65 @@
+#if canImport(AppKit)
+import AppKit
+
+/// Layer-backed view that displays one sprite frame with correct alpha and
+/// performs precise window dragging (only the opaque pet is grabbable).
+final class PetView: NSView {
+
+    /// Called with the drag delta so the controller can move + remember position.
+    var onDragged: ((_ delta: NSSize) -> Void)?
+    var onDragEnded: (() -> Void)?
+    /// Called on a bare click (no drag) — used to poke the pet.
+    var onClick: (() -> Void)?
+
+    private var dragOrigin: NSPoint?
+    private var didDrag = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.contentsGravity = .resizeAspect
+        layer?.isOpaque = false
+        // Painterly art, not pixel art: smooth scaling looks best.
+        layer?.magnificationFilter = .trilinear
+        layer?.minificationFilter = .trilinear
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    override var isFlipped: Bool { true }
+
+    func show(_ image: CGImage?) {
+        layer?.contents = image
+    }
+
+    /// Base opacity (0…1) for dimming (e.g. sleeping).
+    func setDim(_ opacity: CGFloat) {
+        layer?.opacity = Float(opacity)
+    }
+
+    // MARK: - Dragging
+
+    override func mouseDown(with event: NSEvent) {
+        dragOrigin = event.locationInWindow
+        didDrag = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let origin = dragOrigin else { return }
+        let now = event.locationInWindow
+        let delta = NSSize(width: now.x - origin.x, height: now.y - origin.y)
+        if abs(delta.width) + abs(delta.height) > 1 { didDrag = true }
+        onDragged?(delta)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if didDrag {
+            onDragEnded?()
+        } else {
+            onClick?()
+        }
+        dragOrigin = nil
+        didDrag = false
+    }
+}
+#endif

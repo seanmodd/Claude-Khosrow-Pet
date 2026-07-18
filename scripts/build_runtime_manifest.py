@@ -13,7 +13,7 @@ has NO grid, frame, fps, anchor, or animation-name data. This script combines:
 ...into ONE machine-readable runtime manifest consumed by the Swift app, the
 Swift tests, and the bridge simulators:
 
-  app/Sources/KhosrowApp/Resources/khosrow.runtime.json
+  app/Sources/KhosrowKit/Resources/khosrow.runtime.json
 
 CLIP identities are inferred from visual inspection of the contact sheet and are
 clearly marked as such. The STATE map (Claude Code state -> clip) is a tunable
@@ -134,7 +134,7 @@ def main() -> int:
         "states": states,
     }
 
-    out = root / "app/Sources/KhosrowApp/Resources/khosrow.runtime.json"
+    out = root / "app/Sources/KhosrowKit/Resources/khosrow.runtime.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Wrote {out.relative_to(root)}")
