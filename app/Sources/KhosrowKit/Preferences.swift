@@ -64,7 +64,7 @@ public struct SavedPosition: Codable, Equatable {
     }
 }
 
-extension ClosedRange where Bound == Double {
+public extension ClosedRange where Bound == Double {
     func clamp(_ value: Double) -> Double {
         Swift.min(Swift.max(value, lowerBound), upperBound)
     }
