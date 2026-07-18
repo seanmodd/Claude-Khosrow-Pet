@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Swift / SwiftPM
+app/.build/
+app/.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+.DS_Store
+
+# Bridge runtime (never commit a real user's live state)
+.claude-pet/
+*.local.json

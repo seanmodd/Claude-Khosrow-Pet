@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Native macOS build + tests on a GitHub-hosted macOS runner.
+  # ------------------------------------------------------------------ #
+  macos:
+    name: macOS build & test
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build (debug)
+        run: swift build -v
+
+      - name: Run Swift tests
+        # Covers manifest-decoding, frame-coordinate, state-mapping,
+        # settings-merging, animation-player, and runtime-asset (ImageIO
+        # dimensions + alpha) tests.
+        run: swift test -v
+
+      - name: Verify ORIGINAL asset checksums
+        working-directory: .
+        run: shasum -a 256 -c artifacts/ORIGINAL-CHECKSUMS.sha256
+
+      - name: Verify runtime PNG dimensions & alpha (native sips)
+        working-directory: .
+        run: |
+          PNG=app/Sources/KhosrowKit/Resources/khosrow-spritesheet.png
+          W=$(sips -g pixelWidth  "$PNG" | awk '/pixelWidth/{print $2}')
+          H=$(sips -g pixelHeight "$PNG" | awk '/pixelHeight/{print $2}')
+          A=$(sips -g hasAlpha    "$PNG" | awk '/hasAlpha/{print $2}')
+          echo "runtime PNG: ${W}x${H} hasAlpha=${A}"
+          test "$W" = "1536" || { echo "bad width $W"; exit 1; }
+          test "$H" = "2288" || { echo "bad height $H"; exit 1; }
+          test "$A" = "yes"  || { echo "alpha channel missing"; exit 1; }
+
+  # ------------------------------------------------------------------ #
+  # Python bridge tests + cross-platform asset integrity verification.
+  # ------------------------------------------------------------------ #
+  bridge:
+    name: Bridge tests & asset integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run bridge unit tests
+        run: python3 -m unittest discover -s bridge/tests -v
+
+      - name: Install Pillow + numpy for asset checks
+        run: pip install --quiet Pillow numpy
+
+      - name: Verify asset integrity (checksums, dimensions, alpha, lossless)
+        run: python3 scripts/verify_assets.py
+
+      - name: Re-derive runtime manifest and confirm it is reproducible
+        # The atlas derivation is deterministic and version-independent: analyzing
+        # the untouched originals must reproduce the committed manifest byte-for-
+        # byte (JSON is normalized before comparing). The runtime PNG's integrity
+        # is covered by verify_assets.py above (pixel-identity to the WebP), which
+        # is robust across Pillow versions where raw PNG bytes are not.
+        run: |
+          cp app/Sources/KhosrowKit/Resources/khosrow.runtime.json /tmp/committed.json
+          python3 scripts/analyze_assets.py
+          python3 scripts/build_runtime_manifest.py
+          diff <(python3 -m json.tool /tmp/committed.json) \
+               <(python3 -m json.tool app/Sources/KhosrowKit/Resources/khosrow.runtime.json) \
+            && echo "runtime manifest is reproducible"
+
+      - name: Confirm originals untouched by the pipeline
+        run: shasum -a 256 -c artifacts/ORIGINAL-CHECKSUMS.sha256

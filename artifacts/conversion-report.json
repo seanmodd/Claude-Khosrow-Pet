@@ -1,0 +1,30 @@
+{
+  "generator": "scripts/convert_spritesheet.py",
+  "source": {
+    "path": "spritesheet.webp",
+    "sha256": "bc19c4a1a1579ce5993d360b6fcca85f4feaf6db2270352bfa5f7d02f229ff47",
+    "mode": "RGBA",
+    "size": [
+      1536,
+      2288
+    ]
+  },
+  "output": {
+    "path": "app/Sources/KhosrowKit/Resources/khosrow-spritesheet.png",
+    "sha256": "61e29679da600745de6083203eac725fab0ec7651cae0d24faf75d590e9b1534",
+    "size": [
+      1536,
+      2288
+    ],
+    "mode": "RGBA",
+    "bytes": 2418622
+  },
+  "pixel_identical_after_roundtrip": true,
+  "alpha": {
+    "min": 0,
+    "max": 255,
+    "has_true_alpha": true,
+    "fully_transparent": 2818443,
+    "partial": 171354
+  }
+}

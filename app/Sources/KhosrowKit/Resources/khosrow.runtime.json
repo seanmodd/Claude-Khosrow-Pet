@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/build_runtime_manifest.py",
+  "note": "Runtime atlas for the Khosrow macOS app. Grid + frameCounts are derived from pixels; clip identities are inferred from the contact sheet; the state map is a tunable UX decision. pet.json is the identity source of truth and is embedded verbatim below.",
+  "pet": {
+    "id": "khosrow",
+    "displayName": "Khosrow",
+    "description": "A regal human Iranian warrior king in Sasanian-inspired ceremonial dress, with a winged crown and sheathed sword.",
+    "spriteVersionNumber": 2,
+    "spritesheetPath": "spritesheet.webp"
+  },
+  "sheet": {
+    "originalWebP": "spritesheet.webp",
+    "runtimePNG": "khosrow-spritesheet.png",
+    "width": 1536,
+    "height": 2288,
+    "cols": 8,
+    "rows": 11,
+    "cellWidth": 192,
+    "cellHeight": 208,
+    "contentTopPad": 5,
+    "contentBottomPad": 5,
+    "anchor": "bottom-center"
+  },
+  "defaultState": "idle",
+  "clips": {
+    "idle": {
+      "id": "idle",
+      "row": 0,
+      "frameCount": 7,
+      "facing": "front",
+      "fps": 6,
+      "loop": true,
+      "description": "Neutral standing stance, sword sheathed; near-static breathing."
+    },
+    "walk_left": {
+      "id": "walk_left",
+      "row": 1,
+      "frameCount": 8,
+      "facing": "left",
+      "fps": 12,
+      "loop": true,
+      "description": "Striding walk cycle, body angled to the left."
+    },
+    "run_left": {
+      "id": "run_left",
+      "row": 2,
+      "frameCount": 8,
+      "facing": "left",
+      "fps": 14,
+      "loop": true,
+      "description": "Energetic run cycle, long strides, to the left."
+    },
+    "cheer": {
+      "id": "cheer",
+      "row": 3,
+      "frameCount": 4,
+      "facing": "front",
+      "fps": 12,
+      "loop": false,
+      "description": "Right arm raised high in a wave / triumphant salute."
+    },
+    "crouch": {
+      "id": "crouch",
+      "row": 4,
+      "frameCount": 5,
+      "facing": "front",
+      "fps": 9,
+      "loop": false,
+      "description": "Lowers into a deep squat / crouch."
+    },
+    "bow": {
+      "id": "bow",
+      "row": 5,
+      "frameCount": 8,
+      "facing": "front",
+      "fps": 10,
+      "loop": false,
+      "description": "Deep ceremonial bow, folding head and torso forward/down."
+    },
+    "present": {
+      "id": "present",
+      "row": 6,
+      "frameCount": 6,
+      "facing": "front",
+      "fps": 10,
+      "loop": true,
+      "description": "Both arms open outward in a presenting / explaining gesture."
+    },
+    "idle_guard": {
+      "id": "idle_guard",
+      "row": 7,
+      "frameCount": 6,
+      "facing": "front",
+      "fps": 7,
+      "loop": true,
+      "description": "Alert front stance holding the sword; calm standby."
+    },
+    "ready": {
+      "id": "ready",
+      "row": 8,
+      "frameCount": 6,
+      "facing": "front",
+      "fps": 10,
+      "loop": true,
+      "description": "Grips and handles the sword in front; 'working' posture."
+    },
+    "walk_right": {
+      "id": "walk_right",
+      "row": 9,
+      "frameCount": 8,
+      "facing": "right",
+      "fps": 12,
+      "loop": true,
+      "description": "Side-profile walk cycle facing right; scanning."
+    },
+    "run_right": {
+      "id": "run_right",
+      "row": 10,
+      "frameCount": 8,
+      "facing": "right",
+      "fps": 14,
+      "loop": true,
+      "description": "Side-profile run cycle facing right, head dipping."
+    }
+  },
+  "states": {
+    "idle": {
+      "state": "idle",
+      "clip": "idle",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Default resting stance."
+    },
+    "attentive": {
+      "state": "attentive",
+      "clip": "present",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Arms open, engaged right after a prompt."
+    },
+    "reading": {
+      "state": "reading",
+      "clip": "idle_guard",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Calm, focused standby while reading files."
+    },
+    "searching": {
+      "state": "searching",
+      "clip": "walk_right",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Moves/scans while searching the codebase."
+    },
+    "editing": {
+      "state": "editing",
+      "clip": "ready",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Handling the sword = actively editing files."
+    },
+    "runningCommand": {
+      "state": "runningCommand",
+      "clip": "run_left",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Literally running = executing a command."
+    },
+    "waitingForPermission": {
+      "state": "waitingForPermission",
+      "clip": "present",
+      "fpsOverride": 9,
+      "dim": false,
+      "rationale": "Engaged, awaiting your input (shares 'present' with attentive; no dedicated pose)."
+    },
+    "success": {
+      "state": "success",
+      "clip": "cheer",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Arm-raised triumph on success."
+    },
+    "failure": {
+      "state": "failure",
+      "clip": "bow",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Head-down bow reads as apology/defeat on failure."
+    },
+    "sleeping": {
+      "state": "sleeping",
+      "clip": "crouch",
+      "fpsOverride": 4,
+      "dim": true,
+      "rationale": "Curls down to rest; slowed + dimmed (no dedicated sleep frames)."
+    }
+  }
+}
