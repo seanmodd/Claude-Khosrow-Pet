@@ -59,6 +59,30 @@ final class SettingsMergeTests: XCTestCase {
         XCTAssertEqual(once, twice)
     }
 
+    /// Hardening: the two new tool-scoped events install with matcher "*",
+    /// reinstall without duplicating, and uninstall cleanly.
+    func testInstallsNewToolScopedEventsIdempotently() {
+        let newBindings = [
+            ClaudeSettings.HookBinding(event: "PostToolUseFailure", matcher: "*",
+                                       command: "python3 hook.py ptuf # KHOSROW_PET_HOOK"),
+            ClaudeSettings.HookBinding(event: "PermissionRequest", matcher: "*",
+                                       command: "python3 hook.py perm # KHOSROW_PET_HOOK"),
+        ]
+        let once = ClaudeSettings.installHooks(into: .object([:]), bindings: newBindings)
+        for event in ["PostToolUseFailure", "PermissionRequest"] {
+            let groups = once["hooks"]?[event]?.arrayValue ?? []
+            XCTAssertEqual(groups.count, 1, "\(event) should have exactly one pet group")
+            XCTAssertEqual(groups.first?["matcher"]?.stringValue, "*")
+        }
+        let twice = ClaudeSettings.installHooks(into: once, bindings: newBindings)
+        XCTAssertEqual(ClaudeSettings.petHookCount(in: twice), 2)
+        XCTAssertEqual(once, twice)  // no duplicates on reinstall
+
+        let removed = ClaudeSettings.removeHooks(from: twice)
+        XCTAssertEqual(ClaudeSettings.petHookCount(in: removed), 0)
+        XCTAssertNil(removed["hooks"])  // nothing else used hooks
+    }
+
     func testRemoveOnlyRemovesPetHooks() throws {
         let base = try JSONValue.parse("""
         {

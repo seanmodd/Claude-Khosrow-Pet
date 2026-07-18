@@ -9,11 +9,27 @@ final class StateMappingTests: XCTestCase {
         XCTAssertEqual(StateMapper.map(event: .sessionStart), .attentive)
         XCTAssertEqual(StateMapper.map(event: .sessionEnd), .sleeping)
         XCTAssertEqual(StateMapper.map(event: .userPromptSubmit), .attentive)
+        XCTAssertEqual(StateMapper.map(event: .permissionRequest), .waitingForPermission)
         XCTAssertEqual(StateMapper.map(event: .notification), .waitingForPermission)
         XCTAssertEqual(StateMapper.map(event: .subagentStart), .searching)
         XCTAssertEqual(StateMapper.map(event: .subagentStop), .idle)
         XCTAssertEqual(StateMapper.map(event: .stopFailure), .failure)
         XCTAssertEqual(StateMapper.map(event: .postToolUseFailure), .failure)
+    }
+
+    /// Hardening (PermissionRequest + PostToolUseFailure): the two dedicated
+    /// events map directly, Notification stays a fallback, and PostToolUse
+    /// success never reads as failure.
+    func testPermissionRequestAndFailureHardening() {
+        XCTAssertEqual(StateMapper.map(event: .permissionRequest), .waitingForPermission)
+        XCTAssertEqual(StateMapper.map(event: .notification), .waitingForPermission)
+        // Dedicated failure event is unconditional (ignores the success flag).
+        XCTAssertEqual(StateMapper.map(event: .postToolUseFailure), .failure)
+        XCTAssertEqual(StateMapper.map(event: .postToolUseFailure, success: true), .failure)
+        // PostToolUse success path must not read as failure.
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: true), .idle)
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: nil), .idle)
+        XCTAssertNotEqual(StateMapper.map(event: .postToolUse, success: true), .failure)
     }
 
     func testStopSuccessAndFailure() {

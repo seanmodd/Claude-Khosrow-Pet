@@ -12,6 +12,7 @@ public enum HookEvent: String, CaseIterable, Codable, Equatable {
     case preToolUse = "PreToolUse"
     case postToolUse = "PostToolUse"
     case postToolUseFailure = "PostToolUseFailure"
+    case permissionRequest = "PermissionRequest"
     case notification = "Notification"
     case stop = "Stop"
     case stopFailure = "StopFailure"
@@ -43,14 +44,20 @@ public enum StateMapper {
         case .preToolUse:
             return stateForTool(category)
         case .postToolUse:
-            // A tool just finished. Failure shows failure; success returns to a
-            // neutral, ready posture (a brief success flourish is driven by the
-            // dedicated Post/Stop-success handling below when applicable).
+            // PostToolUse fires only on a *successful* tool call in current
+            // Claude Code (failures go to postToolUseFailure). The
+            // `success == false -> failure` branch is a defensive fallback so a
+            // failure is never dropped on builds that route it here instead.
             return (success == false) ? .failure : .idle
         case .postToolUseFailure:
+            // Dedicated failure event — always failure.
             return .failure
+        case .permissionRequest:
+            // A permission dialog is up: the pet should look like it's waiting.
+            return .waitingForPermission
         case .notification:
-            // Claude Code notifications are dominated by permission prompts.
+            // Fallback attention signal (permission prompt, idle prompt, agent
+            // needs input). permissionRequest above is the precise signal.
             return .waitingForPermission
         case .stop:
             return (success == false) ? .failure : .success

@@ -8,6 +8,14 @@ session/app restart.
 - **Install commit (attribution fixed):** `cecdac2` (was `c77bcbf`)
 - **Prepared:** 2026-07-17 (install session)
 
+> **Hardening update (2026-07-18):** the integration now registers **10** hooks.
+> Two dedicated events were added — `PostToolUseFailure → failure` and
+> `PermissionRequest → waitingForPermission` — so failures and permission prompts
+> are signalled by their own events instead of being inferred. `PostToolUse` now
+> covers successful completions only (with a defensive failure fallback). The
+> event→state map below and [CLAUDE-HOOKS.md](CLAUDE-HOOKS.md) reflect this. The
+> §1 install facts (SHA/backup/count of 8) record the *original* install session.
+
 ---
 
 ## 1. Status — done & verified before this handoff
@@ -40,9 +48,10 @@ session/app restart.
 | `PreToolUse` | Edit / Write / MultiEdit / NotebookEdit | `editing` |
 | `PreToolUse` | Bash / BashOutput / Kill* | `runningCommand` |
 | `PreToolUse` | Task / Agent / MCP / other | `attentive` |
-| `PostToolUse` | success | `idle` |
-| `PostToolUse` | failure (`is_error`/`error`) | `failure` |
-| `Notification` | permission / input needed | `waitingForPermission` |
+| `PostToolUse` | success only | `idle` |
+| `PostToolUseFailure` | tool call failed | `failure` |
+| `PermissionRequest` | permission dialog shown | `waitingForPermission` |
+| `Notification` | idle prompt / agent needs input (fallback) | `waitingForPermission` |
 | `Stop` | success | `success` |
 | `Stop` | failure | `failure` |
 | `SubagentStop` | — | `idle` |

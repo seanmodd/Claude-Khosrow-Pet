@@ -24,13 +24,17 @@ MARKER = "KHOSROW_PET_HOOK"
 
 # Events the installer registers, with the matcher to use ("" = no matcher key).
 # Only officially-available Claude Code hook events are registered here.
+# Tool-scoped events (PreToolUse, PostToolUse, PostToolUseFailure,
+# PermissionRequest) take a tool-name matcher; we use "*" to cover every tool.
 INSTALL_EVENTS = [
     ("SessionStart", ""),
     ("SessionEnd", ""),
     ("UserPromptSubmit", ""),
     ("PreToolUse", "*"),
-    ("PostToolUse", "*"),
-    ("Notification", ""),
+    ("PostToolUse", "*"),           # success only (Claude Code routes failures below)
+    ("PostToolUseFailure", "*"),    # dedicated tool-failure event -> failure
+    ("PermissionRequest", "*"),     # permission dialog shown -> waitingForPermission
+    ("Notification", ""),           # fallback attention signal (idle/agent-needs-input)
     ("Stop", ""),
     ("SubagentStop", ""),
 ]

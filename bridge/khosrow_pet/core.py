@@ -81,10 +81,20 @@ def map_state(event: str, category: str | None = None, success: bool | None = No
     if event == "PreToolUse":
         return state_for_tool(category)
     if event == "PostToolUse":
+        # PostToolUse fires only on a *successful* tool call in current Claude
+        # Code (failures go to PostToolUseFailure). We keep a defensive
+        # `success is False -> failure` fallback so a failure is never dropped on
+        # builds that route it here instead.
         return "failure" if success is False else "idle"
     if event == "PostToolUseFailure":
+        # Dedicated failure event — always failure, no payload parsing needed.
         return "failure"
+    if event == "PermissionRequest":
+        # A permission dialog is up: the pet should look like it's waiting.
+        return "waitingForPermission"
     if event == "Notification":
+        # Fallback attention signal (permission prompt, idle prompt, agent needs
+        # input, …). PermissionRequest above is the precise permission signal.
         return "waitingForPermission"
     if event == "Stop":
         return "failure" if success is False else "success"

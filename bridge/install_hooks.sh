@@ -8,7 +8,9 @@
 #   3. MERGES the pet hooks into settings.json (never overwrites; idempotent)
 #
 # It never touches your source repos, never edits Claude Desktop, and only ever
-# adds the eight documented hook entries. Re-running refreshes, doesn't stack.
+# adds the ten documented hook entries (the eight lifecycle events plus the
+# dedicated PostToolUseFailure and PermissionRequest events). Re-running
+# refreshes, doesn't stack.
 #
 # Usage:
 #   ./install_hooks.sh              # install (with confirmation)

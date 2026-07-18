@@ -5,6 +5,11 @@
 # Removes ONLY the pet's hook entries from settings.json (identified by their
 # marker), leaving every other setting and hook untouched. Backs up first.
 #
+# It is event-agnostic: it strips every marked (# KHOSROW_PET_HOOK) group across
+# ALL events — including PostToolUseFailure and PermissionRequest — so it stays
+# correct as the installed event set grows. Removing is idempotent (running it
+# again is a no-op) and prunes now-empty event arrays and an empty "hooks" key.
+#
 # Usage:
 #   ./uninstall_hooks.sh              # remove hooks (with confirmation)
 #   ./uninstall_hooks.sh --dry-run    # preview cleaned settings, write nothing

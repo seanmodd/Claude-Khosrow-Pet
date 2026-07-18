@@ -12,11 +12,33 @@ class StateMapTests(unittest.TestCase):
         self.assertEqual(core.map_state("SessionStart"), "attentive")
         self.assertEqual(core.map_state("SessionEnd"), "sleeping")
         self.assertEqual(core.map_state("UserPromptSubmit"), "attentive")
+        self.assertEqual(core.map_state("PermissionRequest"), "waitingForPermission")
         self.assertEqual(core.map_state("Notification"), "waitingForPermission")
         self.assertEqual(core.map_state("SubagentStart"), "searching")
         self.assertEqual(core.map_state("SubagentStop"), "idle")
         self.assertEqual(core.map_state("StopFailure"), "failure")
         self.assertEqual(core.map_state("PostToolUseFailure"), "failure")
+
+    def test_permission_request_maps_to_waiting(self):
+        # Hardening: the dedicated permission event maps directly, ignoring
+        # category/success. Notification remains a fallback for the same state.
+        self.assertEqual(core.map_state("PermissionRequest"), "waitingForPermission")
+        self.assertEqual(core.map_state("PermissionRequest", "command", None),
+                         "waitingForPermission")
+        self.assertEqual(core.map_state("Notification"), "waitingForPermission")
+
+    def test_post_tool_use_failure_maps_to_failure(self):
+        # Dedicated failure event is unconditional — no payload parsing.
+        self.assertEqual(core.map_state("PostToolUseFailure"), "failure")
+        self.assertEqual(core.map_state("PostToolUseFailure", "command", None), "failure")
+        self.assertEqual(core.map_state("PostToolUseFailure", "command", True), "failure")
+
+    def test_post_tool_use_success_is_never_failure(self):
+        # PostToolUse is the success path; it must not read as failure.
+        self.assertEqual(core.map_state("PostToolUse", "command", True), "idle")
+        self.assertEqual(core.map_state("PostToolUse", "command", None), "idle")
+        self.assertNotEqual(core.map_state("PostToolUse", "command", True), "failure")
+        self.assertNotEqual(core.map_state("PostToolUse", "command", None), "failure")
 
     def test_stop_outcome(self):
         self.assertEqual(core.map_state("Stop", success=True), "success")
@@ -59,8 +81,9 @@ class StateMapTests(unittest.TestCase):
     def test_all_states_are_valid(self):
         # Every event we support must map into the closed STATES set.
         events = ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse",
-                  "PostToolUse", "PostToolUseFailure", "Notification", "Stop",
-                  "StopFailure", "SubagentStart", "SubagentStop"]
+                  "PostToolUse", "PostToolUseFailure", "PermissionRequest",
+                  "Notification", "Stop", "StopFailure", "SubagentStart",
+                  "SubagentStop"]
         for e in events:
             for cat in core.CATEGORIES + [None]:
                 for s in (True, False, None):

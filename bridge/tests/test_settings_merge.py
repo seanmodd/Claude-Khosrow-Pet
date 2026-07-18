@@ -31,6 +31,41 @@ class SettingsMergeTests(unittest.TestCase):
         for event, _ in sm.INSTALL_EVENTS:
             self.assertIn(event, out["hooks"])
 
+    def test_registers_permission_request_and_failure_with_matcher(self):
+        # Hardening: the two new tool-scoped events must be installed with "*".
+        out = sm.install_hooks({}, BRIDGE)
+        for event in ("PermissionRequest", "PostToolUseFailure"):
+            self.assertIn(event, out["hooks"])
+            group = out["hooks"][event][-1]
+            self.assertEqual(group.get("matcher"), "*")
+            cmd = group["hooks"][0]["command"]
+            self.assertIn(sm.MARKER, cmd)
+            self.assertIn(f"--event {event}", cmd)
+
+    def test_reinstall_produces_no_duplicate_new_events(self):
+        once = sm.install_hooks({}, BRIDGE)
+        twice = sm.install_hooks(copy.deepcopy(once), BRIDGE)
+        for event in ("PermissionRequest", "PostToolUseFailure"):
+            self.assertEqual(len(twice["hooks"][event]), 1)  # exactly one pet group
+        self.assertEqual(once, twice)
+
+    def test_uninstall_removes_only_marked_new_events(self):
+        # A user's own PermissionRequest hook must survive uninstall.
+        base = {"hooks": {"PermissionRequest": [
+            {"matcher": "Bash",
+             "hooks": [{"type": "command", "command": "echo user-perm"}]}
+        ]}}
+        installed = sm.install_hooks(base, BRIDGE)
+        self.assertEqual(len(installed["hooks"]["PermissionRequest"]), 2)  # user + pet
+        removed = sm.remove_hooks(installed)
+        self.assertEqual(sm.pet_hook_count(removed), 0)
+        # PostToolUseFailure had only our group -> event key fully removed.
+        self.assertNotIn("PostToolUseFailure", removed.get("hooks", {}))
+        # The user's PermissionRequest hook is untouched.
+        cmds = [h["command"] for g in removed["hooks"]["PermissionRequest"]
+                for h in g["hooks"]]
+        self.assertEqual(cmds, ["echo user-perm"])
+
     def test_pre_tool_use_has_matcher_but_stop_does_not(self):
         out = sm.install_hooks({}, BRIDGE)
         pre_group = out["hooks"]["PreToolUse"][-1]

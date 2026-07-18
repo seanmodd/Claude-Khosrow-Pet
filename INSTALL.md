@@ -88,8 +88,10 @@ What it does:
 
 1. Copies the bridge to `~/.claude-pet/bridge/`.
 2. Backs up `~/.claude/settings.json` → `settings.json.khosrow-backup-<timestamp>`.
-3. Adds eight hook entries (all tagged `KHOSROW_PET_HOOK`) that write the pet's
-   state to `~/.claude-pet/state.json`.
+3. Adds ten hook entries (all tagged `KHOSROW_PET_HOOK`) that write the pet's
+   state to `~/.claude-pet/state.json` — including the dedicated
+   `PostToolUseFailure` (→ `failure`) and `PermissionRequest`
+   (→ `waitingForPermission`) events.
 
 Restart any running Claude Code sessions so the new hooks load. Now start a
 Claude Code task and watch Khosrow read, search, edit, and run commands.

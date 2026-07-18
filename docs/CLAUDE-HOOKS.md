@@ -16,16 +16,24 @@ event to the minimal payload and writes it to `~/.claude-pet/state.json`.
 | `SessionEnd` | ✅ | `sleeping` |
 | `UserPromptSubmit` | ✅ | `attentive` |
 | `PreToolUse` (matcher `*`) | ✅ | depends on tool category (below) |
-| `PostToolUse` (matcher `*`) | ✅ | `idle` on success, `failure` on error |
-| `Notification` | ✅ | `waitingForPermission` |
+| `PostToolUse` (matcher `*`) | ✅ | `idle` (successful completions only) |
+| `PostToolUseFailure` (matcher `*`) | ✅ | `failure` |
+| `PermissionRequest` (matcher `*`) | ✅ | `waitingForPermission` |
+| `Notification` | ✅ | `waitingForPermission` (fallback) |
 | `Stop` | ✅ | `success` (or `failure`) |
 | `SubagentStop` | ✅ | `idle` |
 
-The state mapper *also* understands a few events that are **not** separate hooks
-in current Claude Code — `PostToolUseFailure`, `StopFailure`, `SubagentStart` —
-so the simulators can exercise every state and so failure is handled uniformly.
-In practice, failure is derived from the `PostToolUse`/`Stop` payload, not a
-separate event.
+`PostToolUseFailure` and `PermissionRequest` are **real, registered hooks** (both
+are official Claude Code events): tool failures and permission prompts are
+signalled by their own dedicated events rather than inferred. `PostToolUse` is
+registered for **successful** completions only, but keeps a defensive
+`failure`-on-error fallback so a failure is never dropped. `PermissionRequest` is
+the precise permission signal; `Notification` remains a fallback for permission
+prompts, idle prompts, and agent-needs-input.
+
+The mapper also still understands `StopFailure` and `SubagentStart`, which are
+**not** separate hooks — they exist only so the simulators can exercise every
+state.
 
 ## 2. Tool category mapping
 
@@ -59,8 +67,10 @@ The canonical mapping (implemented identically in Swift `StateMapper` and Python
 | PreToolUse | network | – | searching |
 | PreToolUse | task/other/none | – | attentive |
 | PostToolUse | any | true / none | idle |
-| PostToolUse | any | false | failure |
-| Notification | – | – | waitingForPermission |
+| PostToolUse | any | false | failure *(defensive fallback)* |
+| PostToolUseFailure | any | – | failure |
+| PermissionRequest | – | – | waitingForPermission |
+| Notification | – | – | waitingForPermission *(fallback)* |
 | Stop | – | true / none | success |
 | Stop | – | false | failure |
 | SubagentStop | – | – | idle |
@@ -84,6 +94,8 @@ without disturbing anything else.
     "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event UserPromptSubmit  # KHOSROW_PET_HOOK" } ] } ],
     "PreToolUse":       [ { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event PreToolUse  # KHOSROW_PET_HOOK" } ] } ],
     "PostToolUse":      [ { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event PostToolUse  # KHOSROW_PET_HOOK" } ] } ],
+    "PostToolUseFailure": [ { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event PostToolUseFailure  # KHOSROW_PET_HOOK" } ] } ],
+    "PermissionRequest":  [ { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event PermissionRequest  # KHOSROW_PET_HOOK" } ] } ],
     "Notification":     [ { "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event Notification  # KHOSROW_PET_HOOK" } ] } ],
     "Stop":             [ { "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event Stop  # KHOSROW_PET_HOOK" } ] } ],
     "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "python3 \"$HOME/.claude-pet/bridge/khosrow_pet_hook.py\" --event SubagentStop  # KHOSROW_PET_HOOK" } ] } ]
@@ -92,9 +104,9 @@ without disturbing anything else.
 ```
 
 > The actual file uses absolute paths (e.g. `/Users/you/.claude-pet/bridge/…`).
-> `$HOME` is shown here for readability. `PreToolUse`/`PostToolUse` use
-> `matcher: "*"` (all tools); the non-tool events omit `matcher`, matching
-> Claude Code's schema.
+> `$HOME` is shown here for readability. The tool-scoped events — `PreToolUse`,
+> `PostToolUse`, `PostToolUseFailure`, `PermissionRequest` — use `matcher: "*"`
+> (all tools); the non-tool events omit `matcher`, matching Claude Code's schema.
 
 ### Preview it before installing
 
