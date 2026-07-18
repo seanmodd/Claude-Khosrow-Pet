@@ -18,7 +18,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var testConsole: TestConsoleWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory) // menu-bar app, no Dock icon
+        // Menu-bar app (no Dock icon) by default. Set KHOSROW_FORCE_REGULAR=1 to
+        // run as a regular app (Dock icon + Cmd-Tab): needed by on-screen
+        // automation tools that only enumerate regular apps. Default unchanged.
+        let forceRegular = ProcessInfo.processInfo.environment["KHOSROW_FORCE_REGULAR"] == "1"
+        NSApp.setActivationPolicy(forceRegular ? .regular : .accessory)
 
         do {
             manifest = try KhosrowResources.loadRuntimeManifest()

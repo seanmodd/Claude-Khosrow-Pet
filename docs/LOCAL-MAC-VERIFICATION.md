@@ -18,6 +18,17 @@ swift run KhosrowApp
 
 Expect a 🦁 in the menu bar and Khosrow near the lower-right of the main display.
 
+> **Multi-display note.** The pet launches on whatever is currently the *main*
+> display (the one with the active/key window), at its lower-right. If you can't
+> find it, open 🦁 → **Reset Position** or drag it over — positions are
+> remembered per display.
+>
+> **Scripted / on-screen automation.** Some screen-automation tools only see
+> *regular* apps (ones with a Dock icon). To make Khosrow visible to them, launch
+> with `KHOSROW_FORCE_REGULAR=1 swift run KhosrowApp` (or set it before running a
+> bundled `Khosrow.app`). This only adds a Dock icon + Cmd-Tab entry; every window
+> behavior is identical. With no env var, the app stays a menu-bar-only accessory.
+
 ## 1. Window & rendering ✅ / ❌
 
 - [ ] The pet has **no title bar, border, or background box** — only the
