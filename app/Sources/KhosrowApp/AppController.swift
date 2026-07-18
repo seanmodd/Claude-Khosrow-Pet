@@ -17,9 +17,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var testConsole: TestConsoleWindowController?
 
-    /// Drag anchor: mouse location within the window at mouseDown.
-    private var dragAnchor: NSPoint = .zero
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory) // menu-bar app, no Dock icon
 

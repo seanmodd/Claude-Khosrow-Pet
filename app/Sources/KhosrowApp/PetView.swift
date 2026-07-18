@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import QuartzCore
 
 /// Layer-backed view that displays one sprite frame with correct alpha and
 /// performs precise window dragging (only the opaque pet is grabbable).

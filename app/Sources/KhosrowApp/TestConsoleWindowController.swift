@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import QuartzCore
 import KhosrowKit
 
 /// A view that paints a checkerboard so sprite transparency is visible — the
@@ -207,7 +208,7 @@ final class TestConsoleWindowController: NSWindowController {
         let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.infoLabel.stringValue = String(
-                format: "clip=%@  row=%d  col=%d  frame=%d/%d  seq=#%d",
+                format: "clip=%@  row=%ld  col=%ld  frame=%ld/%ld  seq=#%ld",
                 self.controller.clip.id, self.controller.currentRow,
                 self.controller.currentColumn, self.controller.currentFrameIndex + 1,
                 self.controller.currentFrameCount, self.controller.sequentialIndex)
