@@ -99,9 +99,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         petView.onContextMenu = { [weak self] event in self?.showActionInfo(for: event) }
     }
 
-    /// A bare click briefly makes the pet attentive (a bit of life).
+    /// A bare click gives a little wave — but ONLY when Khosrow is idle and in
+    /// automatic mode. This never overrides a mood you deliberately pinned (so a
+    /// click on a sleeping Khosrow won't wake him), and the next live update
+    /// harmlessly supersedes the wave.
     private func poke() {
-        guard prefs.followBridge == false || controller.state == .idle else { return }
+        guard prefs.followBridge, controller.state == .idle else { return }
         controller.apply(state: .attentive)
     }
 
