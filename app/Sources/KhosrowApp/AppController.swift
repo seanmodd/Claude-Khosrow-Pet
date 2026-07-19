@@ -171,8 +171,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             lines.append("→ \(detail)")
         } else if let category = lastBridge?.toolCategory {
             lines.append("Activity: \(category).")
-        } else {
-            lines.append("(No live signal yet — turn on Watch mode, or install the hooks.)")
+        }
+        // Only nudge about a signal source when we've genuinely never received one.
+        // (An idle payload still counts as a live signal — don't cry "no signal".)
+        if lastBridge == nil {
+            lines.append(prefs.watchMode
+                ? "(Watch mode is on — waiting for Claude Code to do something…)"
+                : "(No live signal yet — turn on Watch mode, or install the hooks.)")
+        } else if prefs.watchMode {
+            lines.append("(via Watch mode)")
         }
         return (title, lines)
     }
