@@ -115,7 +115,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Show a small context menu explaining Khosrow's current mood and why he's
     /// in it (the triggering Claude Code activity, or a manual pin).
     private func showActionInfo(for event: NSEvent) {
-        refreshSessionsSync()   // fresh session list for the picker
+        // Never block the main thread here: warm the session list off-main only
+        // if it's still empty (launch + Rescan keep it fresh otherwise).
+        if sessionCache.isEmpty { refreshSessionsAsync() }
         let info = actionExplanation()
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -138,6 +140,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         auto.target = self
         auto.state = prefs.followBridge ? .on : .off
         menu.addItem(auto)
+
+        // Assign / show which Claude Code session Khosrow reacts to — right here
+        // in the right-click menu (not only the status-bar menu).
+        let sessionItem = NSMenuItem(title: "Watch session", action: nil, keyEquivalent: "")
+        sessionItem.submenu = buildSessionSubmenu()
+        sessionItem.toolTip = "Assign which Claude Code session Khosrow reacts to (Automatic = the newest active one)."
+        menu.addItem(sessionItem)
 
         menu.popUp(positioning: nil,
                    at: petView.convert(event.locationInWindow, from: nil),
@@ -164,10 +173,14 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// The session Khosrow is tuned to: the live label if present, else the
     /// assigned one, else "newest active session".
     private func sessionDisplay() -> String {
-        if let label = lastBridge?.sessionLabel, !label.isEmpty { return label }
-        if prefs.watchSession != "auto", !prefs.watchSession.isEmpty {
+        // A specifically-assigned session takes priority — but only while Watch
+        // mode is actually driving it. That way a stale signal (or a hook, which
+        // ignores the assignment) is never mislabelled with the assigned session,
+        // and a session you just picked shows immediately instead of the old one.
+        if prefs.watchMode, prefs.watchSession != "auto", !prefs.watchSession.isEmpty {
             return prefs.watchSessionLabel.isEmpty ? String(prefs.watchSession.prefix(8)) : prefs.watchSessionLabel
         }
+        if let label = lastBridge?.sessionLabel, !label.isEmpty { return label }
         return "newest active session"
     }
 
@@ -191,8 +204,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         if !prefs.followBridge {
             var lines = ["You pinned this mood — he is NOT reacting to Claude Code.",
                          "Pick  Mood ▸ Automatic  to make him react again."]
-            if prefs.detailMode, let live = liveActivityLine() {
-                lines.append("Meanwhile, Claude Code is \(live).")
+            // Keep Show detail meaningful even while holding a mood, and even with
+            // no live signal: toggling it always adds or removes a line.
+            if prefs.detailMode {
+                if let live = liveActivityLine() { lines.append("Meanwhile, Claude Code is \(live).") }
+                else { lines.append("Meanwhile: no live activity from Claude Code.") }
+            } else {
+                lines.append("Turn on  Show detail  to see live Claude Code activity.")
             }
             return ("Khosrow — holding “\(moodVerb(state))”", lines)
         }
@@ -424,6 +442,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             startWatcher()
         } else {
             stopWatcher()
+            lastBridge = nil            // the watcher's last signal is no longer live
         }
         store.save(prefs); rebuildMenu()
     }
@@ -492,16 +511,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? String else { return }
         prefs.watchSession = id
         prefs.watchSessionLabel = (id == "auto") ? "" : sender.title
+        // Pinning a specific session: drop the previous session's signal so the
+        // info reads "(waiting…)" for the new target until it emits, rather than
+        // attributing the old session's activity to the one you just picked.
+        if id != "auto" { lastBridge = nil }
         if watchProcess != nil { stopWatcher(); startWatcher() }   // re-target the watcher
         store.save(prefs); rebuildMenu()
     }
 
-    @objc private func rescanSessions() { refreshSessionsSync(); rebuildMenu() }
-
-    private func refreshSessionsSync() {
-        let list = runListSessions()
-        if !list.isEmpty { sessionCache = list }
-    }
+    @objc private func rescanSessions() { refreshSessionsAsync() }
 
     private func refreshSessionsAsync() {
         DispatchQueue.global(qos: .utility).async { [weak self] in

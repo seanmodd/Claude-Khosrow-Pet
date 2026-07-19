@@ -84,8 +84,14 @@ def _read_tail(path: str, nbytes: int = 262144) -> str:
         return ""
 
 
-def session_meta(path: str) -> dict:
-    """A compact descriptor of a session transcript: {id, label, cwd, mtime}."""
+def session_meta(path: str, allow_prompt: bool = False) -> dict:
+    """A compact descriptor of a session transcript: {id, label, cwd, mtime}.
+
+    The label never contains prompt text unless ``allow_prompt`` (Detail mode) is
+    set — that keeps the base payload's "no prompt text ever" guarantee. Without a
+    saved title it falls back to the project name plus a short session id, which
+    stays descriptive and distinguishable while revealing no content.
+    """
     sid = os.path.splitext(os.path.basename(path))[0]
     cwd = custom = ai = last_prompt = None
     for line in _read_tail(path).splitlines():
@@ -106,11 +112,15 @@ def session_meta(path: str) -> dict:
             cwd = obj["cwd"]
     project = os.path.basename(cwd) if cwd else None
     title = custom or ai
-    if not title and last_prompt:
+    if not title and allow_prompt and last_prompt:
         title = last_prompt.strip().replace("\n", " ")[:48]
-    if not title:
-        title = project or sid[:8]
-    label = title if (not project or project.lower() in title.lower()) else f"{title} · {project}"
+    if title:
+        label = title if (not project or project.lower() in title.lower()) else f"{title} · {project}"
+    else:
+        # No saved title (and prompt withheld): stay privacy-safe but still
+        # distinguishable — the project name plus a short session id.
+        short = sid[:8]
+        label = f"{project} · {short}" if project else short
     try:
         mtime = os.path.getmtime(path)
     except OSError:
@@ -118,14 +128,14 @@ def session_meta(path: str) -> dict:
     return {"id": sid, "label": label[:70], "cwd": cwd or "", "mtime": mtime}
 
 
-def list_sessions(limit: int = 12) -> list:
+def list_sessions(limit: int = 12, allow_prompt: bool = False) -> list:
     """Recent Claude Code sessions, most-recently-active first."""
     files = glob.glob(os.path.join(PROJECTS_DIR, "*", "*.jsonl"))
     files.sort(key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
     out = []
     for p in files[:limit]:
         try:
-            out.append(session_meta(p))
+            out.append(session_meta(p, allow_prompt=allow_prompt))
         except Exception:
             pass
     return out
@@ -259,14 +269,18 @@ def run(args):
     path, pos, session_id, session_label = None, 0, None, None
 
     def switch(p):
-        nonlocal path, pos, session_id, session_label
+        nonlocal path, pos, session_id, session_label, last_activity
         path = p
         try:
             pos = os.path.getsize(p)                 # start at the end (react to *new* activity)
         except OSError:
             pos = 0
-        meta = session_meta(p)
+        meta = session_meta(p, allow_prompt=args.detail)
         session_id, session_label = meta["id"], meta["label"]
+        # Restart the idle/sleep window for the newly-watched session, so a
+        # session that just became active isn't immediately tagged with a stale
+        # idle/sleeping state carried over from the previous one.
+        last_activity = time.time()
 
     print(f"Khosrow watch mode — {('session ' + target_id) if target_id else 'newest active session'}"
           f"{' (with detail)' if args.detail else ''}. Ctrl-C to stop.", file=sys.stderr)
@@ -352,7 +366,7 @@ def main() -> int:
         if not path:
             print("no transcripts found under", PROJECTS_DIR, file=sys.stderr); return 1
         derived = scan_tail(path, args.detail) or ("idle", None, None, None)
-        meta = session_meta(path)
+        meta = session_meta(path, allow_prompt=args.detail)
         print(json.dumps({"transcript": os.path.basename(path),
                           **build_payload(*derived, session=meta["id"], session_label=meta["label"])}))
         return 0
