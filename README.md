@@ -46,22 +46,27 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
   </tr>
 </table>
 
-### What each mood means
+### What each state means — and exactly what triggers it
 
-| Mood | Animation | Khosrow shows it when… | Reads as |
-|------|-----------|------------------------|----------|
-| 🧍 **idle** | `idle` | nothing's happening, or a tool just finished cleanly | calm default |
-| 🙌 **attentive** | `present` | you submit a prompt, a session starts, or Claude spins up a sub‑task | *"I'm listening."* |
-| 📖 **reading** | `idle_guard` | Claude reads a file — `Read`, `NotebookRead` | focused standby |
-| 🔎 **searching** | `walk_right` | Claude searches or browses — `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch` | scanning the codebase |
-| ✍️ **editing** | `ready` | Claude edits or writes — `Edit`, `Write`, `MultiEdit`, `NotebookEdit`… | hands on the sword = working |
-| 🏃 **runningCommand** | `run_left` | Claude runs a shell command — `Bash`, `BashOutput`… | literally *running* |
-| ✋ **waitingForPermission** | `present` | a permission prompt or notification appears | *"awaiting your call."* |
-| 🎉 **success** | `cheer` | a task finishes successfully (`Stop`) | arm‑raised triumph |
-| 🙇 **failure** | `bow` | a tool/command errors, or a task ends in failure | head‑down apology |
-| 😴 **sleeping** | bed scene | the session ends (`SessionEnd`) | tucks into bed and drifts off |
+Khosrow has **one** set of ten states. What *drives* them is a live signal that can come from **either** source you turn on:
 
-<sub>Two moods deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip, and **sleeping** shows a hand-drawn bed scene — because the source art has no dedicated frames for them. The full, tunable map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>.</sub>
+- **Hook bridge** — Claude Code fires a hook on each lifecycle event (`PreToolUse`, `Stop`, `SessionEnd`, …); the bridge maps that event to a state. Precise, immediate, and it can see permission prompts and clean finishes.
+- **Watch mode** — no install: the pet reads Claude Code's own session transcript and *infers* the state from the newest entry. It sees the same tools, but it can't see a permission prompt or a "turn finished cleanly" signal, so **`waitingForPermission` and `success` are hook‑only** — in Watch mode a clean finish simply settles back to **idle**.
+
+| State | What it means | Fires on — **hook bridge** | Fires on — **Watch mode** |
+|-------|---------------|-----------------------------|----------------------------|
+| 🧍 **idle** | At rest — nothing is running, or a tool just finished cleanly | `PostToolUse` (ok) · `SubagentStop` | ~25 s of transcript quiet |
+| 🙌 **attentive** | Engaged & listening — a turn is starting | `SessionStart` · `UserPromptSubmit` · `Task`/`Agent` | a new prompt, or Claude is thinking / replying |
+| 📖 **reading** | Reading a file | `PreToolUse` · `Read`, `NotebookRead` | those same tools in the transcript |
+| 🔎 **searching** | Scanning the codebase or the web | `PreToolUse` · `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch` · `SubagentStart` | those same tools |
+| ✍️ **editing** | Changing files | `PreToolUse` · `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Update` | those same tools |
+| 🏃 **runningCommand** | Running a shell command | `PreToolUse` · `Bash`, `BashOutput`, `KillShell` | those same tools |
+| ✋ **waitingForPermission** | Waiting for **you** to approve something | `PermissionRequest` · `Notification` | *hook‑only — Watch mode can't see permission prompts* |
+| 🎉 **success** | A turn / task just finished successfully | `Stop` (ok) | *hook‑only — a clean finish settles to **idle** instead* |
+| 🙇 **failure** | A tool or turn just failed | `PostToolUseFailure` · `StopFailure` · any `success:false` | a tool result marked `is_error` |
+| 😴 **sleeping** | The session is over — he tucks into bed | `SessionEnd` | ~4 min of transcript quiet |
+
+<sub>You can always **pin** any state by hand from **Mood ▸** (that's *Hold* mode — he ignores Claude Code until you switch back to *Automatic*). Some states deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip — because the source art has no dedicated frames for them. The full, tunable event→state map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>; the hook table is in <a href="docs/CLAUDE-HOOKS.md">docs/CLAUDE-HOOKS.md</a>.</sub>
 
 ---
 
