@@ -59,9 +59,9 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 | ✋ **waitingForPermission** | `present` | a permission prompt or notification appears | *"awaiting your call."* |
 | 🎉 **success** | `cheer` | a task finishes successfully (`Stop`) | arm‑raised triumph |
 | 🙇 **failure** | `bow` | a tool/command errors, or a task ends in failure | head‑down apology |
-| 😴 **sleeping** | `crouch` · *dimmed* | the session ends (`SessionEnd`) | curls up and fades to rest |
+| 😴 **sleeping** | `idle` · rotated flat · *dimmed* | the session ends (`SessionEnd`) | lies down on the ground and fades to rest |
 
-<sub>Two moods deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip, and **sleeping** reuses *crouch* (slowed + dimmed) — because the source art has no dedicated frames for them. The full, tunable map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>.</sub>
+<sub>Two moods deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip, and **sleeping** lays the *idle* pose flat on the ground (rotated 90°, slowed + dimmed) — because the source art has no dedicated frames for them. The full, tunable map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>.</sub>
 
 ---
 
@@ -102,7 +102,7 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 
 ## 🎛️ The Faravahar menu
 
-<img src="docs/media/menubar-faravahar.png" align="right" height="46" alt="Faravahar menu-bar icon">
+<img src="docs/media/menubar-faravahar-highfidelity.png" align="right" height="46" alt="Faravahar menu-bar icon">
 
 Every control lives behind the **Faravahar** glyph in your menu bar:
 

@@ -11,6 +11,8 @@ final class PetView: NSView {
     var onDragEnded: (() -> Void)?
     /// Called on a bare click (no drag) — used to poke the pet.
     var onClick: (() -> Void)?
+    /// Called on a right-click or control-click — shows "what is he doing, and why?".
+    var onContextMenu: ((NSEvent) -> Void)?
 
     private var dragOrigin: NSPoint?
     private var didDrag = false
@@ -41,8 +43,13 @@ final class PetView: NSView {
     // MARK: - Dragging
 
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) { onContextMenu?(event); return }
         dragOrigin = event.locationInWindow
         didDrag = false
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onContextMenu?(event)
     }
 
     override func mouseDragged(with event: NSEvent) {

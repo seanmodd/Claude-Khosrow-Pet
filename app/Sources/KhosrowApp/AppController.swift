@@ -13,6 +13,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let bridge = BridgeClient()
     private let store = PreferencesStore()
     private var prefs = Preferences()
+    private var lastBridge: PetBridgeState?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var testConsole: TestConsoleWindowController?
@@ -95,12 +96,83 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         petView.onDragEnded = { [weak self] in self?.savePosition() }
         petView.onClick = { [weak self] in self?.poke() }
+        petView.onContextMenu = { [weak self] event in self?.showActionInfo(for: event) }
     }
 
     /// A bare click briefly makes the pet attentive (a bit of life).
     private func poke() {
         guard prefs.followBridge == false || controller.state == .idle else { return }
         controller.apply(state: .attentive)
+    }
+
+    // MARK: Right-click — "what is he doing, and why?"
+
+    /// Show a small context menu explaining Khosrow's current mood and why he's
+    /// in it (the triggering Claude Code activity, or a manual pin).
+    private func showActionInfo(for event: NSEvent) {
+        let info = actionExplanation()
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let header = NSMenuItem(title: info.title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        header.attributedTitle = NSAttributedString(
+            string: info.title,
+            attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+        menu.addItem(header)
+
+        for line in info.lines {
+            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+
+        let follow = NSMenuItem(title: "Follow Claude Code", action: #selector(toggleFollow), keyEquivalent: "")
+        follow.target = self
+        follow.state = prefs.followBridge ? .on : .off
+        menu.addItem(follow)
+
+        menu.popUp(positioning: nil,
+                   at: petView.convert(event.locationInWindow, from: nil),
+                   in: petView)
+    }
+
+    /// A human summary of the current mood and *why* Khosrow is in it.
+    private func actionExplanation() -> (title: String, lines: [String]) {
+        let verbs: [PetState: String] = [
+            .idle: "resting", .attentive: "listening", .reading: "reading a file",
+            .searching: "searching", .editing: "editing", .runningCommand: "running a command",
+            .waitingForPermission: "waiting for permission", .success: "celebrating a win",
+            .failure: "recovering from an error", .sleeping: "sleeping",
+        ]
+        let state = controller.state
+        let title = "Khosrow is \(verbs[state] ?? state.rawValue)"
+
+        if !prefs.followBridge {
+            return (title, ["You pinned this mood from the menu —",
+                            "he isn't following Claude Code right now."])
+        }
+
+        let why: [PetState: String] = [
+            .idle: "Nothing is running right now (or a tool just finished cleanly).",
+            .attentive: "You just sent a prompt, or a session / sub-task started.",
+            .reading: "Claude Code is reading a file.",
+            .searching: "Claude Code is searching or browsing the codebase.",
+            .editing: "Claude Code is editing a file.",
+            .runningCommand: "Claude Code is running a shell command.",
+            .waitingForPermission: "Claude Code is waiting for you to approve something.",
+            .success: "A task just finished successfully.",
+            .failure: "A tool or task just failed.",
+            .sleeping: "The Claude Code session ended — he's asleep.",
+        ]
+        var lines = [why[state] ?? "Following Claude Code."]
+        if let category = lastBridge?.toolCategory {
+            lines.append("Last tool activity: \(category).")
+        } else {
+            lines.append("(No live signal yet — install the hooks to make him react.)")
+        }
+        return (title, lines)
     }
 
     // MARK: Position memory (per screen)
@@ -136,6 +208,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: Bridge
 
     private func handleBridge(_ payload: PetBridgeState) {
+        lastBridge = payload
         guard prefs.followBridge else { return }
         guard let state = payload.petState else { return }
         controller.apply(state: state)

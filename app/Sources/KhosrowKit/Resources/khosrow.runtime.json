@@ -190,10 +190,10 @@
     },
     "sleeping": {
       "state": "sleeping",
-      "clip": "crouch",
+      "clip": "idle",
       "fpsOverride": 4,
       "dim": true,
-      "rationale": "Curls down to rest; slowed + dimmed (no dedicated sleep frames)."
+      "rationale": "Lies flat on the ground to rest: the upright idle pose rotated 90 degrees, slowed and dimmed (the sheet has no dedicated sleep frames)."
     }
   }
 }

@@ -24,6 +24,9 @@ final class PetController {
     private var lastTick: CFTimeInterval = 0
     /// When true (manual/test mode) the display timer does not auto-advance.
     var manualMode: Bool = false
+    /// When true (the sleeping mood) frames are rotated flat onto the ground.
+    private var lyingDown = false
+    private var rotatedCache: [Int: CGImage] = [:]
 
     init(manifest: RuntimeManifest, sheet: SpriteSheet, view: PetView) {
         self.manifest = manifest
@@ -76,6 +79,7 @@ final class PetController {
         clip = resolved
         player.reset(clip: resolved, fpsOverride: binding?.fpsOverride)
         applyDim(binding?.dim ?? false)
+        lyingDown = (state == .sleeping)
         renderCurrentFrame()
     }
 
@@ -119,7 +123,13 @@ final class PetController {
     var sequentialIndex: Int { clip.row * manifest.sheet.cols + player.frameIndex }
 
     private func renderCurrentFrame() {
-        view.show(sheet.frame(row: clip.row, index: player.frameIndex))
+        let base = sheet.frame(row: clip.row, index: player.frameIndex)
+        guard lyingDown, let base else { view.show(base); return }
+        let key = clip.row * manifest.sheet.cols + player.frameIndex
+        if let cached = rotatedCache[key] { view.show(cached); return }
+        let rotated = SpriteSheet.lyingFrame(base)
+        if let rotated { rotatedCache[key] = rotated }
+        view.show(rotated ?? base)
     }
 }
 #endif
