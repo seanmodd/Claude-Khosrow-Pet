@@ -59,7 +59,7 @@ STATES = [
     ("waitingForPermission", "present",     9,     False, "Engaged, awaiting your input (shares 'present' with attentive; no dedicated pose)."),
     ("success",              "cheer",       None,  False, "Arm-raised triumph on success."),
     ("failure",              "bow",         None,  False, "Head-down bow reads as apology/defeat on failure."),
-    ("sleeping",             "crouch",      4,     True,  "Curls down to rest; slowed + dimmed (no dedicated sleep frames)."),
+    ("sleeping",             "idle",        4,     True,  "Lies flat on the ground to rest: the upright idle pose rotated 90 degrees, slowed and dimmed (the sheet has no dedicated sleep frames)."),
 ]
 
 DEFAULT_STATE = "idle"
