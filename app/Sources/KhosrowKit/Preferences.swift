@@ -26,6 +26,10 @@ public struct Preferences: Codable, Equatable {
     public var watchMode: Bool
     /// The active skin id ("khosrow" is the built-in).
     public var currentSkin: String
+    /// Which Claude Code session Watch mode follows ("auto" = newest active).
+    public var watchSession: String
+    /// A cached human label for the assigned session (shown before a signal arrives).
+    public var watchSessionLabel: String
 
     public static let scaleRange: ClosedRange<Double> = 0.25...4.0
     public static let speedRange: ClosedRange<Double> = 0.1...4.0
@@ -41,7 +45,9 @@ public struct Preferences: Codable, Equatable {
                 followBridge: Bool = true,
                 detailMode: Bool = false,
                 watchMode: Bool = false,
-                currentSkin: String = "khosrow") {
+                currentSkin: String = "khosrow",
+                watchSession: String = "auto",
+                watchSessionLabel: String = "") {
         self.scale = scale
         self.speedMultiplier = speedMultiplier
         self.clickThrough = clickThrough
@@ -53,6 +59,8 @@ public struct Preferences: Codable, Equatable {
         self.detailMode = detailMode
         self.watchMode = watchMode
         self.currentSkin = currentSkin
+        self.watchSession = watchSession
+        self.watchSessionLabel = watchSessionLabel
     }
 
     /// Decode tolerantly so older saved preferences (missing the newer keys)
@@ -71,6 +79,8 @@ public struct Preferences: Codable, Equatable {
         detailMode = try c.decodeIfPresent(Bool.self, forKey: .detailMode) ?? d.detailMode
         watchMode = try c.decodeIfPresent(Bool.self, forKey: .watchMode) ?? d.watchMode
         currentSkin = try c.decodeIfPresent(String.self, forKey: .currentSkin) ?? d.currentSkin
+        watchSession = try c.decodeIfPresent(String.self, forKey: .watchSession) ?? d.watchSession
+        watchSessionLabel = try c.decodeIfPresent(String.self, forKey: .watchSessionLabel) ?? d.watchSessionLabel
     }
 
     /// Return a copy with all values clamped into their valid ranges.

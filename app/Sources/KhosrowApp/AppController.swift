@@ -17,6 +17,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var prefs = Preferences()
     private var lastBridge: PetBridgeState?
     private var watchProcess: Process?
+    private var sessionCache: [(id: String, label: String)] = []
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var testConsole: TestConsoleWindowController?
@@ -66,6 +67,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         bridge.startHTTPListener()
 
         if prefs.watchMode { startWatcher() }
+        refreshSessionsAsync()   // populate the session picker in the background
     }
 
     // MARK: Sizing
@@ -113,6 +115,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Show a small context menu explaining Khosrow's current mood and why he's
     /// in it (the triggering Claude Code activity, or a manual pin).
     private func showActionInfo(for event: NSEvent) {
+        refreshSessionsSync()   // fresh session list for the picker
         let info = actionExplanation()
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -158,18 +161,24 @@ final class AppController: NSObject, NSApplicationDelegate {
         return text
     }
 
+    /// The session Khosrow is tuned to: the live label if present, else the
+    /// assigned one, else "newest active session".
+    private func sessionDisplay() -> String {
+        if let label = lastBridge?.sessionLabel, !label.isEmpty { return label }
+        if prefs.watchSession != "auto", !prefs.watchSession.isEmpty {
+            return prefs.watchSessionLabel.isEmpty ? String(prefs.watchSession.prefix(8)) : prefs.watchSessionLabel
+        }
+        return "newest active session"
+    }
+
     /// Where the live signal comes from, and which session — one short line.
     private func sourceLine() -> String {
-        if lastBridge == nil {
-            return prefs.watchMode
-                ? "Watch mode is on — waiting for activity…"
-                : "No live signal yet — turn on Watch mode, or install the hooks."
+        if !prefs.watchMode, lastBridge == nil {
+            return "No live signal yet — turn on Watch mode, or install the hooks."
         }
         let via = prefs.watchMode ? "Watch mode" : "installed hooks"
-        if let label = lastBridge?.sessionLabel, !label.isEmpty {
-            return "Live via \(via) · session: \(label)"
-        }
-        return "Live via \(via)."
+        let waiting = (lastBridge == nil) ? " (waiting…)" : ""
+        return "Session: \(sessionDisplay())\(waiting) · via \(via)"
     }
 
     /// A human summary of the current mood and *why* Khosrow is in it.
@@ -319,6 +328,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         detail.state = prefs.detailMode ? .on : .off
         detail.toolTip = "Adds the current file / command / prompt to the right-click info. Off by default — it surfaces real content."
         menu.addItem(detail)
+
+        let sessionItem = NSMenuItem(title: "Watch session", action: nil, keyEquivalent: "")
+        sessionItem.submenu = buildSessionSubmenu()
+        sessionItem.toolTip = "Which Claude Code session Khosrow reacts to (or Automatic = the newest active one)."
+        menu.addItem(sessionItem)
         menu.addItem(.separator())
 
         let clickThrough = makeItem("Click-through", #selector(toggleClickThrough), "")
@@ -431,7 +445,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: python)
-        proc.arguments = [script.path] + (prefs.detailMode ? ["--detail"] : [])
+        var arguments = [script.path]
+        if prefs.detailMode { arguments.append("--detail") }
+        arguments += ["--session", prefs.watchSession.isEmpty ? "auto" : prefs.watchSession]
+        proc.arguments = arguments
         var env = ProcessInfo.processInfo.environment
         env["KHOSROW_PET_STATE_FILE"] = BridgeClient.defaultStateFileURL.path
         proc.environment = env
@@ -448,6 +465,75 @@ final class AppController: NSObject, NSApplicationDelegate {
         watchProcess?.terminationHandler = nil
         watchProcess?.terminate()
         watchProcess = nil
+    }
+
+    // MARK: Watch-session picker
+
+    /// Build the "Watch session" submenu: Automatic + recent sessions + Rescan.
+    private func buildSessionSubmenu() -> NSMenu {
+        let m = NSMenu()
+        let auto = makeItem("Automatic (newest active)", #selector(pickSession(_:)), "")
+        auto.representedObject = "auto"
+        auto.state = (prefs.watchSession.isEmpty || prefs.watchSession == "auto") ? .on : .off
+        m.addItem(auto)
+        if !sessionCache.isEmpty { m.addItem(.separator()) }
+        for s in sessionCache {
+            let item = makeItem(s.label, #selector(pickSession(_:)), "")
+            item.representedObject = s.id
+            item.state = (prefs.watchSession == s.id) ? .on : .off
+            m.addItem(item)
+        }
+        m.addItem(.separator())
+        m.addItem(makeItem("Rescan sessions", #selector(rescanSessions), ""))
+        return m
+    }
+
+    @objc private func pickSession(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        prefs.watchSession = id
+        prefs.watchSessionLabel = (id == "auto") ? "" : sender.title
+        if watchProcess != nil { stopWatcher(); startWatcher() }   // re-target the watcher
+        store.save(prefs); rebuildMenu()
+    }
+
+    @objc private func rescanSessions() { refreshSessionsSync(); rebuildMenu() }
+
+    private func refreshSessionsSync() {
+        let list = runListSessions()
+        if !list.isEmpty { sessionCache = list }
+    }
+
+    private func refreshSessionsAsync() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let list = self.runListSessions()
+            DispatchQueue.main.async {
+                guard !list.isEmpty else { return }
+                self.sessionCache = list
+                self.rebuildMenu()
+            }
+        }
+    }
+
+    /// Ask the bundled watcher to enumerate recent Claude Code sessions.
+    private func runListSessions() -> [(id: String, label: String)] {
+        guard let script = KhosrowResources.watchScriptURL() else { return [] }
+        let candidates = ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+        guard let python = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return [] }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [script.path, "--list-sessions"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do { try proc.run() } catch { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return arr.compactMap { dict in
+            guard let id = dict["id"] as? String else { return nil }
+            return (id, (dict["label"] as? String) ?? id)
+        }
     }
 
     // MARK: Skins

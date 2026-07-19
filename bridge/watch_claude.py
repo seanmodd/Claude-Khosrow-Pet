@@ -68,6 +68,69 @@ def newest_transcript() -> str | None:
     return max(files, key=os.path.getmtime) if files else None
 
 
+def find_transcript(session_id: str) -> str | None:
+    """The transcript file for a given session id (the filename is the id)."""
+    hits = glob.glob(os.path.join(PROJECTS_DIR, "*", f"{session_id}.jsonl"))
+    return hits[0] if hits else None
+
+
+def _read_tail(path: str, nbytes: int = 262144) -> str:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - nbytes))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def session_meta(path: str) -> dict:
+    """A compact descriptor of a session transcript: {id, label, cwd, mtime}."""
+    sid = os.path.splitext(os.path.basename(path))[0]
+    cwd = custom = ai = last_prompt = None
+    for line in _read_tail(path).splitlines():
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        kind = obj.get("type")
+        if kind == "custom-title" and obj.get("customTitle"):
+            custom = obj["customTitle"]
+        elif kind == "ai-title" and obj.get("aiTitle"):
+            ai = obj["aiTitle"]
+        elif kind == "last-prompt" and obj.get("lastPrompt"):
+            last_prompt = obj["lastPrompt"]
+        if cwd is None and isinstance(obj.get("cwd"), str):
+            cwd = obj["cwd"]
+    project = os.path.basename(cwd) if cwd else None
+    title = custom or ai
+    if not title and last_prompt:
+        title = last_prompt.strip().replace("\n", " ")[:48]
+    if not title:
+        title = project or sid[:8]
+    label = title if (not project or project.lower() in title.lower()) else f"{title} · {project}"
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0.0
+    return {"id": sid, "label": label[:70], "cwd": cwd or "", "mtime": mtime}
+
+
+def list_sessions(limit: int = 12) -> list:
+    """Recent Claude Code sessions, most-recently-active first."""
+    files = glob.glob(os.path.join(PROJECTS_DIR, "*", "*.jsonl"))
+    files.sort(key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
+    out = []
+    for p in files[:limit]:
+        try:
+            out.append(session_meta(p))
+        except Exception:
+            pass
+    return out
+
+
 def _basename(path: str | None) -> str | None:
     return os.path.basename(path) if path else None
 
@@ -125,10 +188,14 @@ def derive(entry: dict, want_detail: bool):
     return None
 
 
-def build_payload(state, cat, success, detail):
+def build_payload(state, cat, success, detail, session=None, session_label=None):
     payload = {"state": state, "toolCategory": cat, "timestamp": iso_now(), "success": success}
     if detail:
         payload["detail"] = detail
+    if session:
+        payload["session"] = session
+    if session_label:
+        payload["sessionLabel"] = session_label
     return payload
 
 
@@ -187,24 +254,33 @@ def scan_tail(path, want_detail, max_lines=400):
 def run(args):
     http = not args.no_http
     idle_after, sleep_after = args.idle_after, args.sleep_after
-    current, last_change, last_activity = None, 0.0, time.time()
-    path, pos = None, 0
+    target_id = None if (not args.session or args.session == "auto") else args.session
+    current, current_session, last_activity = None, None, time.time()
+    path, pos, session_id, session_label = None, 0, None, None
 
     def switch(p):
-        nonlocal path, pos
+        nonlocal path, pos, session_id, session_label
         path = p
         try:
             pos = os.path.getsize(p)                 # start at the end (react to *new* activity)
         except OSError:
             pos = 0
+        meta = session_meta(p)
+        session_id, session_label = meta["id"], meta["label"]
 
-    print(f"Khosrow watch mode — following Claude Code transcripts in {PROJECTS_DIR}"
+    print(f"Khosrow watch mode — {('session ' + target_id) if target_id else 'newest active session'}"
           f"{' (with detail)' if args.detail else ''}. Ctrl-C to stop.", file=sys.stderr)
 
     while True:
-        newest = newest_transcript()
-        if newest and newest != path:
-            switch(newest)
+        if target_id:                                # follow one assigned session
+            tp = find_transcript(target_id)
+            if tp and tp != path:
+                switch(tp)
+        else:                                        # auto: follow whatever's active now
+            newest = newest_transcript()
+            if newest and newest != path:
+                switch(newest)
+
         derived, monotonic = None, time.time()
         if path:
             try:
@@ -237,9 +313,9 @@ def run(args):
         else:
             new_state = None
 
-        if new_state is not None and new_state != current:
-            current = new_state
-            payload = build_payload(*new_state)
+        if new_state is not None and (new_state != current or session_id != current_session):
+            current, current_session = new_state, session_id
+            payload = build_payload(*new_state, session=session_id, session_label=session_label)
             if not args.print_only:
                 emit(payload, http=http)
             print(json.dumps(payload))
@@ -259,15 +335,26 @@ def main() -> int:
     ap.add_argument("--no-http", action="store_true", help="don't POST to the app's localhost port")
     ap.add_argument("--print-only", action="store_true", help="print payloads; don't write the state file")
     ap.add_argument("--test", action="store_true",
-                    help="derive the current state from the newest transcript once, print it, and exit")
+                    help="derive the current state from the target/newest transcript once, print it, and exit")
+    ap.add_argument("--session", default=None,
+                    help="follow a specific Claude Code session id (default: auto = newest active)")
+    ap.add_argument("--list-sessions", action="store_true",
+                    help="print recent Claude Code sessions as JSON and exit")
     args = ap.parse_args()
 
+    if args.list_sessions:
+        print(json.dumps(list_sessions()))
+        return 0
+
     if args.test:
-        path = newest_transcript()
+        path = (find_transcript(args.session)
+                if args.session and args.session != "auto" else newest_transcript())
         if not path:
             print("no transcripts found under", PROJECTS_DIR, file=sys.stderr); return 1
         derived = scan_tail(path, args.detail) or ("idle", None, None, None)
-        print(json.dumps({"transcript": os.path.basename(path), **build_payload(*derived)}))
+        meta = session_meta(path)
+        print(json.dumps({"transcript": os.path.basename(path),
+                          **build_payload(*derived, session=meta["id"], session_label=meta["label"])}))
         return 0
 
     try:
