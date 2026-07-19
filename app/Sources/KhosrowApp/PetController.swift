@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import ImageIO
 import QuartzCore
 import KhosrowKit
 
@@ -24,9 +25,10 @@ final class PetController {
     private var lastTick: CFTimeInterval = 0
     /// When true (manual/test mode) the display timer does not auto-advance.
     var manualMode: Bool = false
-    /// When true (the sleeping mood) frames are rotated flat onto the ground.
-    private var lyingDown = false
-    private var rotatedCache: [Int: CGImage] = [:]
+    /// When true (the sleeping mood) the bed scene is shown instead of a sprite.
+    private var sleeping = false
+    /// Frames of the drawn "sleeping in a bed" scene.
+    private let bedFrames: [CGImage]
 
     init(manifest: RuntimeManifest, sheet: SpriteSheet, view: PetView) {
         self.manifest = manifest
@@ -38,6 +40,10 @@ final class PetController {
         self.clip = clip
         self.player = AnimationPlayer(clip: clip,
                                       fpsOverride: manifest.states[initial.rawValue]?.fpsOverride)
+        self.bedFrames = KhosrowResources.bedFrameURLs().compactMap { url in
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        }
         renderCurrentFrame()
     }
 
@@ -79,7 +85,7 @@ final class PetController {
         clip = resolved
         player.reset(clip: resolved, fpsOverride: binding?.fpsOverride)
         applyDim(binding?.dim ?? false)
-        lyingDown = (state == .sleeping)
+        sleeping = (state == .sleeping)
         renderCurrentFrame()
     }
 
@@ -123,13 +129,11 @@ final class PetController {
     var sequentialIndex: Int { clip.row * manifest.sheet.cols + player.frameIndex }
 
     private func renderCurrentFrame() {
-        let base = sheet.frame(row: clip.row, index: player.frameIndex)
-        guard lyingDown, let base else { view.show(base); return }
-        let key = clip.row * manifest.sheet.cols + player.frameIndex
-        if let cached = rotatedCache[key] { view.show(cached); return }
-        let rotated = SpriteSheet.lyingFrame(base)
-        if let rotated { rotatedCache[key] = rotated }
-        view.show(rotated ?? base)
+        if sleeping, !bedFrames.isEmpty {
+            view.show(bedFrames[player.frameIndex % bedFrames.count])
+            return
+        }
+        view.show(sheet.frame(row: clip.row, index: player.frameIndex))
     }
 }
 #endif

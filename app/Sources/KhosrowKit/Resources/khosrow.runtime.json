@@ -192,8 +192,8 @@
       "state": "sleeping",
       "clip": "idle",
       "fpsOverride": 4,
-      "dim": true,
-      "rationale": "Lies flat on the ground to rest: the upright idle pose rotated 90 degrees, slowed and dimmed (the sheet has no dedicated sleep frames)."
+      "dim": false,
+      "rationale": "Tucks into a bed and sleeps: a drawn bed scene overlays the idle clip (the sheet has no dedicated sleep frames)."
     }
   }
 }

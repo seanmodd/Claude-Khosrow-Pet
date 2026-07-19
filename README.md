@@ -59,9 +59,9 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 | ✋ **waitingForPermission** | `present` | a permission prompt or notification appears | *"awaiting your call."* |
 | 🎉 **success** | `cheer` | a task finishes successfully (`Stop`) | arm‑raised triumph |
 | 🙇 **failure** | `bow` | a tool/command errors, or a task ends in failure | head‑down apology |
-| 😴 **sleeping** | `idle` · rotated flat · *dimmed* | the session ends (`SessionEnd`) | lies down on the ground and fades to rest |
+| 😴 **sleeping** | bed scene | the session ends (`SessionEnd`) | tucks into bed and drifts off |
 
-<sub>Two moods deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip, and **sleeping** lays the *idle* pose flat on the ground (rotated 90°, slowed + dimmed) — because the source art has no dedicated frames for them. The full, tunable map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>.</sub>
+<sub>Two moods deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip, and **sleeping** shows a hand-drawn bed scene — because the source art has no dedicated frames for them. The full, tunable map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>.</sub>
 
 ---
 
@@ -72,26 +72,24 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 <tr>
 <td valign="top">
 
-- **Float** above every window — transparent & borderless
-- **Drag** him anywhere; he stays where you drop him
-- **Remembers his spot per display** (Retina + multi‑monitor aware)
+- **Float** above every window — transparent & borderless; **drag** him anywhere (**remembers his spot per display**)
 - **Click‑through** mode — clicks pass to whatever's beneath
-- **Reacts live** to Claude Code across **10 moods**
-- **Menu‑bar control center** (the Faravahar glyph)
-- **Scale 25% → 400%**, crisp at every size
-- **Show on all Spaces** / over full‑screen apps
-- **Animation Test Console** — preview every clip, verify transparency
-- Runs **completely standalone** — hooks are optional
-- **100% native AppKit** — no Electron, no web view, never touches Claude Desktop
+- **Reacts live** to Claude Code across **10 moods** — via hooks **or** hook‑free **Watch mode**
+- 🆕 **Watch mode** — follows Claude Code by reading its own session transcripts: **no `settings.json` edit, no restart**
+- 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
+- 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
+- **Right‑click him** to see his current mood and *why*
+- **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**
+- **Menu‑bar control center** (the Faravahar glyph) + an **Animation Test Console**
+- Runs **completely standalone**; **100% native AppKit** — no Electron, no web view, never touches Claude Desktop
 
 </td>
 <td valign="top">
 
 - Runs on **macOS 12+** only (it's a native app)
 - The optional double‑click `.app` is **unsigned** — first launch needs right‑click → **Open**; no notarization, App Store, or sandbox
-- **Never reads your prompts, code, or output** — so he can show the *kind* of activity but not *what* you're doing (that's the privacy trade‑off, on purpose)
-- Hooks are **opt‑in** and edit `~/.claude/settings.json` (auto‑backed‑up, fully reversible); you must **restart Claude Code** for them to load
-- **One character**, no in‑app skin switcher — swap the art by regenerating the runtime assets
+- **Detail mode is off by default** — turning it on surfaces real content, so mind screen‑shares
+- **Watch mode is best‑effort** — it reads Claude Code's transcript format, which can change between releases
 - No sound; doesn't auto‑launch at login (add it yourself if you'd like)
 
 </td>
@@ -109,9 +107,12 @@ Every control lives behind the **Faravahar** glyph in your menu bar:
 - **Pause / Resume** — freeze or resume the animation
 - **Sleep / Wake** — curl up & dim, or return to idle
 - **State ▸** — *Follow Claude Code*, or pin any of the 10 moods by hand
+- **Watch Claude Code (live)** — follow his transcripts with **no install, no restart**
+- **Show detail** — opt‑in: surface the current file / command / prompt
 - **Click‑through** — let the mouse pass beneath him
 - **Float on top** · **Show on all Spaces** — window‑behavior toggles
 - **Scale ▸** — 25% … 400%
+- **Skin ▸** — switch characters (Khosrow, Sepia, or your own from `~/.claude-pet/skins/`)
 - **Animation Test Console…** — preview every clip, step frames, check the alpha cut‑out
 - **Reset Position** — bring him home (a lifesaver on a multi‑display setup)
 - **Quit Khosrow**
@@ -126,13 +127,15 @@ cd Claude-Khosrow-Pet/app
 swift run KhosrowApp        # the Faravahar appears in the menu bar; Khosrow near the lower-right
 ```
 
-**Make him react to Claude Code** (optional):
+**Make him react to Claude Code** — two ways:
 
-```bash
-cd ../bridge
-./install_hooks.sh --dry-run   # preview the exact settings merge — writes nothing
-./install_hooks.sh             # timestamped backup + merge; then restart Claude Code
-```
+- **No install (recommended):** menu → **Watch Claude Code (live)**. He follows Claude Code's session transcripts — no `settings.json`, no restart. (Or run it yourself: `python3 bridge/watch_claude.py` — add `--detail` for the *what*.)
+- **Hook bridge:**
+  ```bash
+  cd ../bridge
+  ./install_hooks.sh --dry-run   # preview the exact settings merge — writes nothing
+  ./install_hooks.sh             # timestamped backup + merge; then restart Claude Code
+  ```
 
 **See every mood without Claude Code:**
 
@@ -153,7 +156,7 @@ The bridge only ever writes this — and nothing else:
 { "state": "editing", "toolCategory": "file-edit", "timestamp": "2026-07-18T03:54:27Z", "success": true }
 ```
 
-No prompts, code, file paths, commands, or command output ever leave your machine. An adversarial redaction test stuffs a payload full of passwords, API keys, and SSH paths and proves none of it leaks. Details → **[PRIVACY.md](PRIVACY.md)** · **[docs/CLAUDE-HOOKS.md](docs/CLAUDE-HOOKS.md)**
+No prompts, code, file paths, commands, or command output ever leave your machine. An adversarial redaction test stuffs a payload full of passwords, API keys, and SSH paths and proves none of it leaks. **Detail mode is opt‑in** (off by default): enable it and the payload gains a short `detail` string — a file name, command, or prompt snippet — so the pet can show *what* you're doing. That's your call. Details → **[PRIVACY.md](PRIVACY.md)** · **[docs/CLAUDE-HOOKS.md](docs/CLAUDE-HOOKS.md)**
 
 ---
 
@@ -163,7 +166,7 @@ No prompts, code, file paths, commands, or command output ever leave your machin
 |-------|------------|
 | **UI** | Swift + AppKit — one borderless, transparent, floating window |
 | **Core** | `KhosrowKit` — pure, cross‑platform logic (manifest, frame math, state map), unit‑tested |
-| **Bridge** | stdlib‑only Python hooks → a minimal, non‑sensitive state file |
+| **Bridge** | stdlib‑only Python — hooks **or** a transcript watcher (`watch_claude.py`) → a minimal state file |
 | **Art** | 1536×2288 sheet · 8×11 grid · **11 clips / 74 frames** |
 
 ```

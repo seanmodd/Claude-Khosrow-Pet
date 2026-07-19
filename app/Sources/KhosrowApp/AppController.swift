@@ -10,10 +10,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var window: PetWindow!
     private var petView: PetView!
     private var controller: PetController!
+    private var skins: [Skin] = []
+    private var currentSkinID = "khosrow"
     private let bridge = BridgeClient()
     private let store = PreferencesStore()
     private var prefs = Preferences()
     private var lastBridge: PetBridgeState?
+    private var watchProcess: Process?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var testConsole: TestConsoleWindowController?
@@ -25,22 +28,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         let forceRegular = ProcessInfo.processInfo.environment["KHOSROW_FORCE_REGULAR"] == "1"
         NSApp.setActivationPolicy(forceRegular ? .regular : .accessory)
 
-        do {
-            manifest = try KhosrowResources.loadRuntimeManifest()
-            let problems = manifest.validate()
-            if !problems.isEmpty {
-                NSLog("Khosrow: manifest problems: \(problems)")
-            }
-            sheet = try SpriteSheet(manifest: manifest)
-            if !sheet.hasAlpha {
-                NSLog("Khosrow: WARNING runtime PNG has no alpha channel")
-            }
-        } catch {
-            presentFatal("Failed to load Khosrow assets: \(error)")
-            return
-        }
-
         prefs = store.load()
+        skins = SkinLibrary.all()
+        guard let initial = skins.first(where: { $0.id == prefs.currentSkin }) ?? skins.first else {
+            presentFatal("Failed to load Khosrow assets."); return
+        }
+        manifest = initial.manifest
+        sheet = initial.sheet
+        currentSkinID = initial.id
+        let problems = manifest.validate()
+        if !problems.isEmpty { NSLog("Khosrow: manifest problems: \(problems)") }
+        if !sheet.hasAlpha { NSLog("Khosrow: WARNING runtime PNG has no alpha channel") }
 
         let size = windowSize()
         petView = PetView(frame: NSRect(origin: .zero, size: size))
@@ -66,6 +64,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         bridge.onState = { [weak self] payload in self?.handleBridge(payload) }
         bridge.startFilePolling()
         bridge.startHTTPListener()
+
+        if prefs.watchMode { startWatcher() }
     }
 
     // MARK: Sizing
@@ -167,10 +167,12 @@ final class AppController: NSObject, NSApplicationDelegate {
             .sleeping: "The Claude Code session ended — he's asleep.",
         ]
         var lines = [why[state] ?? "Following Claude Code."]
-        if let category = lastBridge?.toolCategory {
-            lines.append("Last tool activity: \(category).")
+        if prefs.detailMode, let detail = lastBridge?.detail, !detail.isEmpty {
+            lines.append("→ \(detail)")
+        } else if let category = lastBridge?.toolCategory {
+            lines.append("Activity: \(category).")
         } else {
-            lines.append("(No live signal yet — install the hooks to make him react.)")
+            lines.append("(No live signal yet — turn on Watch mode, or install the hooks.)")
         }
         return (title, lines)
     }
@@ -269,6 +271,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(stateItem)
         menu.addItem(.separator())
 
+        let watch = makeItem(prefs.watchMode ? "Watching Claude Code (live)" : "Watch Claude Code (live)",
+                             #selector(toggleWatch), "")
+        watch.state = prefs.watchMode ? .on : .off
+        watch.toolTip = "Follow Claude Code by reading its session transcripts — no settings.json, no restart."
+        menu.addItem(watch)
+
+        let detail = makeItem("Show detail (what he's doing)", #selector(toggleDetail), "")
+        detail.state = prefs.detailMode ? .on : .off
+        detail.toolTip = "Surface the current file / command / prompt. Off by default — it shows real content."
+        menu.addItem(detail)
+        menu.addItem(.separator())
+
         let clickThrough = makeItem("Click-through", #selector(toggleClickThrough), "")
         clickThrough.state = prefs.clickThrough ? .on : .off
         menu.addItem(clickThrough)
@@ -292,6 +306,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         scaleItem.submenu = scaleMenu
         menu.addItem(scaleItem)
+
+        // Skin submenu
+        let skinItem = NSMenuItem(title: "Skin", action: nil, keyEquivalent: "")
+        let skinMenu = NSMenu()
+        for skin in skins {
+            let item = makeItem(skin.name, #selector(pickSkin(_:)), "")
+            item.representedObject = skin.id
+            item.state = (skin.id == currentSkinID) ? .on : .off
+            skinMenu.addItem(item)
+        }
+        skinMenu.addItem(.separator())
+        skinMenu.addItem(makeItem("Reveal Skins Folder…", #selector(revealSkinsFolder), ""))
+        skinMenu.addItem(makeItem("Rescan Skins", #selector(rescanSkins), ""))
+        skinItem.submenu = skinMenu
+        menu.addItem(skinItem)
         menu.addItem(.separator())
 
         menu.addItem(makeItem("Animation Test Console…", #selector(openTestConsole), "t"))
@@ -332,6 +361,98 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func toggleFollow() {
         prefs.followBridge.toggle()
         store.save(prefs); rebuildMenu()
+    }
+
+    // MARK: Watch mode (no hooks / no restart) + detail
+
+    @objc private func toggleWatch() {
+        prefs.watchMode.toggle()
+        if prefs.watchMode { startWatcher() } else { stopWatcher() }
+        store.save(prefs); rebuildMenu()
+    }
+
+    @objc private func toggleDetail() {
+        prefs.detailMode.toggle()
+        store.save(prefs)
+        if watchProcess != nil { stopWatcher(); startWatcher() }   // relaunch with/without --detail
+        rebuildMenu()
+    }
+
+    /// Launch the bundled transcript watcher so the pet follows Claude Code with
+    /// no settings.json edit and no restart.
+    private func startWatcher() {
+        guard watchProcess == nil, let script = KhosrowResources.watchScriptURL() else { return }
+        let candidates = ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+        guard let python = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            NSLog("Khosrow: watch mode needs python3 (none found)"); prefs.watchMode = false; return
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [script.path] + (prefs.detailMode ? ["--detail"] : [])
+        var env = ProcessInfo.processInfo.environment
+        env["KHOSROW_PET_STATE_FILE"] = BridgeClient.defaultStateFileURL.path
+        proc.environment = env
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        proc.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { self?.watchProcess = nil }
+        }
+        do { try proc.run(); watchProcess = proc }
+        catch { NSLog("Khosrow: watch mode failed to start: \(error)"); prefs.watchMode = false }
+    }
+
+    private func stopWatcher() {
+        watchProcess?.terminationHandler = nil
+        watchProcess?.terminate()
+        watchProcess = nil
+    }
+
+    // MARK: Skins
+
+    @objc private func pickSkin(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        switchSkin(to: id)
+    }
+
+    /// Swap the live skin: rebuild the controller with the new manifest + sheet,
+    /// resize to its cell, and re-apply the current mood.
+    private func switchSkin(to id: String) {
+        guard id != currentSkinID, let skin = skins.first(where: { $0.id == id }) else { return }
+        let keep = controller.state
+        controller.stop()
+        manifest = skin.manifest
+        sheet = skin.sheet
+        currentSkinID = skin.id
+        prefs.currentSkin = skin.id
+
+        let size = windowSize()
+        petView.frame = NSRect(origin: .zero, size: size)
+        var frame = window.frame
+        frame.size = size
+        window.setFrame(frame, display: true)
+
+        controller = PetController(manifest: manifest, sheet: sheet, view: petView)
+        controller.speedMultiplier = prefs.speedMultiplier
+        controller.setBaseOpacity(CGFloat(prefs.opacity))
+        controller.setPaused(prefs.paused)
+        controller.start()
+        controller.apply(state: keep)
+
+        store.save(prefs); rebuildMenu()
+    }
+
+    @objc private func rescanSkins() {
+        skins = SkinLibrary.all()
+        if !skins.contains(where: { $0.id == currentSkinID }) {
+            switchSkin(to: skins.first?.id ?? "khosrow")
+        }
+        rebuildMenu()
+    }
+
+    @objc private func revealSkinsFolder() {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-pet/skins")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
 
     @objc private func pickState(_ sender: NSMenuItem) {
@@ -381,6 +502,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        stopWatcher()
         store.save(prefs)
         savePosition()
         NSApp.terminate(nil)

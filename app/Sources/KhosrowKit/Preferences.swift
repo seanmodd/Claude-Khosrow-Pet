@@ -20,6 +20,12 @@ public struct Preferences: Codable, Equatable {
     public var opacity: Double
     /// Whether the pet follows the live bridge state (vs. a manually held state).
     public var followBridge: Bool
+    /// Opt-in: surface *what* Claude is doing (file / command / prompt) in the UI.
+    public var detailMode: Bool
+    /// Whether transcript "watch mode" is on (auto-started on launch).
+    public var watchMode: Bool
+    /// The active skin id ("khosrow" is the built-in).
+    public var currentSkin: String
 
     public static let scaleRange: ClosedRange<Double> = 0.25...4.0
     public static let speedRange: ClosedRange<Double> = 0.1...4.0
@@ -32,7 +38,10 @@ public struct Preferences: Codable, Equatable {
                 floatOnTop: Bool = true,
                 showOnAllSpaces: Bool = true,
                 opacity: Double = 1.0,
-                followBridge: Bool = true) {
+                followBridge: Bool = true,
+                detailMode: Bool = false,
+                watchMode: Bool = false,
+                currentSkin: String = "khosrow") {
         self.scale = scale
         self.speedMultiplier = speedMultiplier
         self.clickThrough = clickThrough
@@ -41,6 +50,27 @@ public struct Preferences: Codable, Equatable {
         self.showOnAllSpaces = showOnAllSpaces
         self.opacity = opacity
         self.followBridge = followBridge
+        self.detailMode = detailMode
+        self.watchMode = watchMode
+        self.currentSkin = currentSkin
+    }
+
+    /// Decode tolerantly so older saved preferences (missing the newer keys)
+    /// still load with sensible defaults instead of resetting everything.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Preferences()
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? d.scale
+        speedMultiplier = try c.decodeIfPresent(Double.self, forKey: .speedMultiplier) ?? d.speedMultiplier
+        clickThrough = try c.decodeIfPresent(Bool.self, forKey: .clickThrough) ?? d.clickThrough
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? d.paused
+        floatOnTop = try c.decodeIfPresent(Bool.self, forKey: .floatOnTop) ?? d.floatOnTop
+        showOnAllSpaces = try c.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces) ?? d.showOnAllSpaces
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? d.opacity
+        followBridge = try c.decodeIfPresent(Bool.self, forKey: .followBridge) ?? d.followBridge
+        detailMode = try c.decodeIfPresent(Bool.self, forKey: .detailMode) ?? d.detailMode
+        watchMode = try c.decodeIfPresent(Bool.self, forKey: .watchMode) ?? d.watchMode
+        currentSkin = try c.decodeIfPresent(String.self, forKey: .currentSkin) ?? d.currentSkin
     }
 
     /// Return a copy with all values clamped into their valid ranges.

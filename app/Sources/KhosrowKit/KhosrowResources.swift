@@ -44,4 +44,15 @@ public enum KhosrowResources {
     public static func menuBarIconURL() -> URL? {
         Bundle.module.url(forResource: "faravahar-menubar", withExtension: "png")
     }
+
+    /// The frames of the "sleeping in a bed" scene, shown for the sleeping mood.
+    public static func bedFrameURLs() -> [URL] {
+        (1...4).compactMap { Bundle.module.url(forResource: "khosrow-bed-\($0)", withExtension: "png") }
+    }
+
+    /// The bundled "watch mode" script — lets the app follow Claude Code's
+    /// transcripts with no settings.json edit and no restart.
+    public static func watchScriptURL() -> URL? {
+        Bundle.module.url(forResource: "watch_claude", withExtension: "py")
+    }
 }

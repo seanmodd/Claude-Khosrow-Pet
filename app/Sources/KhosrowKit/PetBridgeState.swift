@@ -9,21 +9,25 @@ public struct PetBridgeState: Codable, Equatable {
     public let toolCategory: String?
     public let timestamp: String   // ISO-8601
     public let success: Bool?
+    /// Optional, opt-in "what": a file name, command, or prompt snippet. Only
+    /// present when the user turned on Detail mode; nil keeps the payload minimal.
+    public let detail: String?
 
     public init(state: String, toolCategory: String? = nil,
-                timestamp: String, success: Bool? = nil) {
+                timestamp: String, success: Bool? = nil, detail: String? = nil) {
         self.state = state
         self.toolCategory = toolCategory
         self.timestamp = timestamp
         self.success = success
+        self.detail = detail
     }
 
     public init(state: PetState, toolCategory: ToolCategory? = nil,
-                timestamp: String, success: Bool? = nil) {
+                timestamp: String, success: Bool? = nil, detail: String? = nil) {
         self.init(state: state.rawValue,
                   toolCategory: toolCategory?.rawValue,
                   timestamp: timestamp,
-                  success: success)
+                  success: success, detail: detail)
     }
 
     /// Resolve the payload's state string into a known ``PetState`` (lenient).

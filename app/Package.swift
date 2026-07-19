@@ -21,6 +21,11 @@ let package = Package(
                 .copy("Resources/khosrow.runtime.json"),
                 .copy("Resources/khosrow-spritesheet.png"),
                 .copy("Resources/faravahar-menubar.png"),
+                .copy("Resources/khosrow-bed-1.png"),
+                .copy("Resources/khosrow-bed-2.png"),
+                .copy("Resources/khosrow-bed-3.png"),
+                .copy("Resources/khosrow-bed-4.png"),
+                .copy("Resources/watch_claude.py"),
             ]
         ),
         // AppKit UI. Compiled in CI; not run there (needs a real macOS session).
