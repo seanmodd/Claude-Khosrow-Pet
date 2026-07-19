@@ -52,14 +52,14 @@ CLIPS = [
 STATES = [
     ("idle",                 "idle",        None,  False, "Default resting stance."),
     ("attentive",            "present",     None,  False, "Arms open, engaged right after a prompt."),
-    ("reading",              "idle_guard",  None,  False, "Calm, focused standby while reading files."),
+    ("reading",              "idle_guard",  None,  False, "Reads an open book: bundled hand-drawn khosrow-reading-* frames (falls back to the calm idle_guard clip if absent)."),
     ("searching",            "walk_right",  None,  False, "Moves/scans while searching the codebase."),
     ("editing",              "ready",       None,  False, "Handling the sword = actively editing files."),
     ("runningCommand",       "run_left",    None,  False, "Literally running = executing a command."),
     ("waitingForPermission", "present",     9,     False, "Engaged, awaiting your input (shares 'present' with attentive; no dedicated pose)."),
-    ("success",              "cheer",       None,  False, "Arm-raised triumph on success."),
+    ("success",              "cheer",       None,  False, "Raises his sword in triumph: bundled hand-drawn khosrow-success-* frames (falls back to the cheer clip if absent)."),
     ("failure",              "bow",         None,  False, "Head-down bow reads as apology/defeat on failure."),
-    ("sleeping",             "idle",        4,     False, "Tucks into a bed and sleeps: a drawn bed scene overlays the idle clip (the sheet has no dedicated sleep frames)."),
+    ("sleeping",             "idle",        4,     False, "Sleeps in a hand-drawn bed: bundled khosrow-sleeping-* frames (falls back to the idle clip if absent)."),
 ]
 
 DEFAULT_STATE = "idle"

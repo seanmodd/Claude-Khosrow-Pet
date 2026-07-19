@@ -144,7 +144,7 @@
       "clip": "idle_guard",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Calm, focused standby while reading files."
+      "rationale": "Reads an open book: bundled hand-drawn khosrow-reading-* frames (falls back to the calm idle_guard clip if absent)."
     },
     "searching": {
       "state": "searching",
@@ -179,7 +179,7 @@
       "clip": "cheer",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Arm-raised triumph on success."
+      "rationale": "Raises his sword in triumph: bundled hand-drawn khosrow-success-* frames (falls back to the cheer clip if absent)."
     },
     "failure": {
       "state": "failure",
@@ -193,7 +193,7 @@
       "clip": "idle",
       "fpsOverride": 4,
       "dim": false,
-      "rationale": "Tucks into a bed and sleeps: a drawn bed scene overlays the idle clip (the sheet has no dedicated sleep frames)."
+      "rationale": "Sleeps in a hand-drawn bed: bundled khosrow-sleeping-* frames (falls back to the idle clip if absent)."
     }
   }
 }

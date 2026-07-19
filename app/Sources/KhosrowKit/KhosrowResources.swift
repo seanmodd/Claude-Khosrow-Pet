@@ -45,9 +45,21 @@ public enum KhosrowResources {
         Bundle.module.url(forResource: "faravahar-menubar", withExtension: "png")
     }
 
-    /// The frames of the "sleeping in a bed" scene, shown for the sleeping mood.
-    public static func bedFrameURLs() -> [URL] {
-        (1...4).compactMap { Bundle.module.url(forResource: "khosrow-bed-\($0)", withExtension: "png") }
+    /// Hand-drawn frame sequence for a given state, if one is bundled.
+    ///
+    /// Files are named `khosrow-<state>-1.png`, `khosrow-<state>-2.png`, … (a
+    /// contiguous 1-based run of transparent 192×208 frames). Returns them in
+    /// order; an empty array means "this state has no custom frames — use the
+    /// sprite sheet." Bundled today for `sleeping`, `reading`, and `success`.
+    public static func customFrameURLs(forState state: String) -> [URL] {
+        var urls: [URL] = []
+        var i = 1
+        while let url = Bundle.module.url(forResource: "khosrow-\(state)-\(i)", withExtension: "png") {
+            urls.append(url)
+            i += 1
+            if i > 64 { break }   // safety cap; sequences are short
+        }
+        return urls
     }
 
     /// The bundled "watch mode" script — lets the app follow Claude Code's

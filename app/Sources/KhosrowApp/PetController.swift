@@ -25,10 +25,20 @@ final class PetController {
     private var lastTick: CFTimeInterval = 0
     /// When true (manual/test mode) the display timer does not auto-advance.
     var manualMode: Bool = false
-    /// When true (the sleeping mood) the bed scene is shown instead of a sprite.
-    private var sleeping = false
-    /// Frames of the drawn "sleeping in a bed" scene.
-    private let bedFrames: [CGImage]
+
+    /// A hand-drawn frame sequence that replaces the sprite sheet for a mood,
+    /// played on its own clock — independent of the mapped clip's fps and frame
+    /// count, so the number of frames never has to divide the clip's.
+    private struct CustomAnim {
+        let frames: [CGImage]
+        let fps: Double
+        let loops: Bool
+    }
+    /// Per-state custom sequences (sleeping / reading / success today).
+    private let customAnims: [PetState: CustomAnim]
+    /// Playback cursor + accumulator for the active custom sequence.
+    private var customFrame = 0
+    private var customAccum: CFTimeInterval = 0
 
     init(manifest: RuntimeManifest, sheet: SpriteSheet, view: PetView) {
         self.manifest = manifest
@@ -40,11 +50,27 @@ final class PetController {
         self.clip = clip
         self.player = AnimationPlayer(clip: clip,
                                       fpsOverride: manifest.states[initial.rawValue]?.fpsOverride)
-        self.bedFrames = KhosrowResources.bedFrameURLs().compactMap { url in
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-            return CGImageSourceCreateImageAtIndex(source, 0, nil)
-        }
+        self.customAnims = PetController.loadCustomAnims()
         renderCurrentFrame()
+    }
+
+    /// Load the bundled per-state frame sequences and their playback cadence.
+    private static func loadCustomAnims() -> [PetState: CustomAnim] {
+        // state -> (fps, loops). Frames are bundled transparent 192×208 PNGs.
+        let config: [(PetState, Double, Bool)] = [
+            (.sleeping, 4, true),   // slow, gentle breathing under the blanket
+            (.reading,  5, true),   // calm reading, a page-turn mid-cycle
+            (.success,  9, true),   // energetic, repeating sword-raise of triumph
+        ]
+        var out: [PetState: CustomAnim] = [:]
+        for (state, fps, loops) in config {
+            let frames = KhosrowResources.customFrameURLs(forState: state.rawValue).compactMap { url -> CGImage? in
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                return CGImageSourceCreateImageAtIndex(src, 0, nil)
+            }
+            if !frames.isEmpty { out[state] = CustomAnim(frames: frames, fps: fps, loops: loops) }
+        }
+        return out
     }
 
     // MARK: Lifecycle
@@ -69,9 +95,29 @@ final class PetController {
         let dt = max(0, now - lastTick)
         lastTick = now
         guard !manualMode, !player.paused else { return }
-        if player.advance(by: dt * max(0.01, speedMultiplier)) {
+        let step = dt * max(0.01, speedMultiplier)
+        if let anim = customAnims[state] {
+            advanceCustom(anim, by: step)
+        } else if player.advance(by: step) {
             renderCurrentFrame()
         }
+    }
+
+    /// Advance the active custom sequence on its own fps clock (loops or holds
+    /// the last frame per the sequence's `loops` flag).
+    private func advanceCustom(_ anim: CustomAnim, by dt: CFTimeInterval) {
+        guard anim.fps > 0, !anim.frames.isEmpty else { return }
+        customAccum += dt
+        let frameDur = 1.0 / anim.fps
+        var changed = false
+        while customAccum >= frameDur {
+            customAccum -= frameDur
+            let next = customFrame + 1
+            if anim.loops { customFrame = next % anim.frames.count }
+            else if next < anim.frames.count { customFrame = next }
+            changed = true
+        }
+        if changed { renderCurrentFrame() }
     }
 
     // MARK: State application
@@ -85,7 +131,8 @@ final class PetController {
         clip = resolved
         player.reset(clip: resolved, fpsOverride: binding?.fpsOverride)
         applyDim(binding?.dim ?? false)
-        sleeping = (state == .sleeping)
+        customFrame = 0        // restart any custom sequence for the new mood
+        customAccum = 0
         renderCurrentFrame()
     }
 
@@ -129,8 +176,10 @@ final class PetController {
     var sequentialIndex: Int { clip.row * manifest.sheet.cols + player.frameIndex }
 
     private func renderCurrentFrame() {
-        if sleeping, !bedFrames.isEmpty {
-            view.show(bedFrames[player.frameIndex % bedFrames.count])
+        // Custom-frame moods draw their own art — except while the test console
+        // has taken over manual clip preview, where the sheet should show.
+        if !manualMode, let anim = customAnims[state], !anim.frames.isEmpty {
+            view.show(anim.frames[min(customFrame, anim.frames.count - 1)])
             return
         }
         view.show(sheet.frame(row: clip.row, index: player.frameIndex))
