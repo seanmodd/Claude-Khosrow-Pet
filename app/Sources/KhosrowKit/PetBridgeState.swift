@@ -12,22 +12,31 @@ public struct PetBridgeState: Codable, Equatable {
     /// Optional, opt-in "what": a file name, command, or prompt snippet. Only
     /// present when the user turned on Detail mode; nil keeps the payload minimal.
     public let detail: String?
+    /// Which Claude Code session produced this signal (session id / uuid).
+    public let session: String?
+    /// A short human label for that session (title or project), for the UI.
+    public let sessionLabel: String?
 
     public init(state: String, toolCategory: String? = nil,
-                timestamp: String, success: Bool? = nil, detail: String? = nil) {
+                timestamp: String, success: Bool? = nil, detail: String? = nil,
+                session: String? = nil, sessionLabel: String? = nil) {
         self.state = state
         self.toolCategory = toolCategory
         self.timestamp = timestamp
         self.success = success
         self.detail = detail
+        self.session = session
+        self.sessionLabel = sessionLabel
     }
 
     public init(state: PetState, toolCategory: ToolCategory? = nil,
-                timestamp: String, success: Bool? = nil, detail: String? = nil) {
+                timestamp: String, success: Bool? = nil, detail: String? = nil,
+                session: String? = nil, sessionLabel: String? = nil) {
         self.init(state: state.rawValue,
                   toolCategory: toolCategory?.rawValue,
                   timestamp: timestamp,
-                  success: success, detail: detail)
+                  success: success, detail: detail,
+                  session: session, sessionLabel: sessionLabel)
     }
 
     /// Resolve the payload's state string into a known ``PetState`` (lenient).

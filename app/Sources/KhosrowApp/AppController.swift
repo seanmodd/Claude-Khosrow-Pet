@@ -131,32 +131,64 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
 
-        let follow = NSMenuItem(title: "Follow Claude Code", action: #selector(toggleFollow), keyEquivalent: "")
-        follow.target = self
-        follow.state = prefs.followBridge ? .on : .off
-        menu.addItem(follow)
+        let auto = NSMenuItem(title: "Automatic (react to Claude Code)", action: #selector(toggleFollow), keyEquivalent: "")
+        auto.target = self
+        auto.state = prefs.followBridge ? .on : .off
+        menu.addItem(auto)
 
         menu.popUp(positioning: nil,
                    at: petView.convert(event.locationInWindow, from: nil),
                    in: petView)
     }
 
-    /// A human summary of the current mood and *why* Khosrow is in it.
-    private func actionExplanation() -> (title: String, lines: [String]) {
-        let verbs: [PetState: String] = [
-            .idle: "resting", .attentive: "listening", .reading: "reading a file",
-            .searching: "searching", .editing: "editing", .runningCommand: "running a command",
-            .waitingForPermission: "waiting for permission", .success: "celebrating a win",
-            .failure: "recovering from an error", .sleeping: "sleeping",
-        ]
-        let state = controller.state
-        let title = "Khosrow is \(verbs[state] ?? state.rawValue)"
+    private static let moodVerbs: [PetState: String] = [
+        .idle: "resting", .attentive: "listening", .reading: "reading a file",
+        .searching: "searching", .editing: "editing", .runningCommand: "running a command",
+        .waitingForPermission: "waiting for permission", .success: "celebrating a win",
+        .failure: "recovering from an error", .sleeping: "sleeping",
+    ]
+    private func moodVerb(_ s: PetState) -> String { Self.moodVerbs[s] ?? s.rawValue }
 
+    /// What Claude Code is doing right now per the last live signal (with the
+    /// file/command appended when Detail mode is on). Nil until a signal arrives.
+    private func liveActivityLine() -> String? {
+        guard let payload = lastBridge, let s = payload.petState else { return nil }
+        var text = moodVerb(s)
+        if prefs.detailMode, let d = payload.detail, !d.isEmpty { text += " (\(d))" }
+        return text
+    }
+
+    /// Where the live signal comes from, and which session — one short line.
+    private func sourceLine() -> String {
+        if lastBridge == nil {
+            return prefs.watchMode
+                ? "Watch mode is on — waiting for activity…"
+                : "No live signal yet — turn on Watch mode, or install the hooks."
+        }
+        let via = prefs.watchMode ? "Watch mode" : "installed hooks"
+        if let label = lastBridge?.sessionLabel, !label.isEmpty {
+            return "Live via \(via) · session: \(label)"
+        }
+        return "Live via \(via)."
+    }
+
+    /// A human summary of the current mood and *why* Khosrow is in it.
+    /// Consistent vocabulary: **Automatic** (reacting to Claude Code) vs
+    /// **Hold** (a mood you pinned); **Watch mode** is the live-signal source.
+    private func actionExplanation() -> (title: String, lines: [String]) {
+        let state = controller.state
+
+        // Hold mode: he holds a mood you picked and ignores Claude Code.
         if !prefs.followBridge {
-            return (title, ["You pinned this mood from the menu —",
-                            "he isn't following Claude Code right now."])
+            var lines = ["You pinned this mood — he is NOT reacting to Claude Code.",
+                         "Pick  Mood ▸ Automatic  to make him react again."]
+            if prefs.detailMode, let live = liveActivityLine() {
+                lines.append("Meanwhile, Claude Code is \(live).")
+            }
+            return ("Khosrow — holding “\(moodVerb(state))”", lines)
         }
 
+        // Automatic mode: he mirrors Claude Code.
         let why: [PetState: String] = [
             .idle: "Nothing is running right now (or a tool just finished cleanly).",
             .attentive: "You just sent a prompt, or a session / sub-task started.",
@@ -169,22 +201,17 @@ final class AppController: NSObject, NSApplicationDelegate {
             .failure: "A tool or task just failed.",
             .sleeping: "The Claude Code session ended — he's asleep.",
         ]
-        var lines = [why[state] ?? "Following Claude Code."]
-        if prefs.detailMode, let detail = lastBridge?.detail, !detail.isEmpty {
-            lines.append("→ \(detail)")
-        } else if let category = lastBridge?.toolCategory {
-            lines.append("Activity: \(category).")
+        var lines = [why[state] ?? "Reacting to Claude Code."]
+        // Detail line always reflects the Show-detail toggle, so toggling it
+        // visibly changes what you see here.
+        if prefs.detailMode {
+            if let d = lastBridge?.detail, !d.isEmpty { lines.append("→ \(d)") }
+            else { lines.append("→ (no file or command for this activity)") }
+        } else {
+            lines.append("Turn on  Show detail  to see the file / command.")
         }
-        // Only nudge about a signal source when we've genuinely never received one.
-        // (An idle payload still counts as a live signal — don't cry "no signal".)
-        if lastBridge == nil {
-            lines.append(prefs.watchMode
-                ? "(Watch mode is on — waiting for Claude Code to do something…)"
-                : "(No live signal yet — turn on Watch mode, or install the hooks.)")
-        } else if prefs.watchMode {
-            lines.append("(via Watch mode)")
-        }
-        return (title, lines)
+        lines.append(sourceLine())
+        return ("Khosrow is \(moodVerb(state))", lines)
     }
 
     // MARK: Position memory (per screen)
@@ -264,32 +291,33 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(makeItem(controller.isPaused ? "Resume" : "Pause", #selector(togglePause), "p"))
         menu.addItem(makeItem(controller.state == .sleeping ? "Wake" : "Sleep", #selector(toggleSleep), "s"))
 
-        // State submenu
-        let stateItem = NSMenuItem(title: "State", action: nil, keyEquivalent: "")
-        let stateMenu = NSMenu()
-        let follow = makeItem("Follow Claude Code", #selector(toggleFollow), "")
-        follow.state = prefs.followBridge ? .on : .off
-        stateMenu.addItem(follow)
-        stateMenu.addItem(.separator())
+        // Mood submenu: Automatic (react to Claude Code) vs. holding a mood you pick.
+        let moodItem = NSMenuItem(title: "Mood", action: nil, keyEquivalent: "")
+        let moodMenu = NSMenu()
+        let auto = makeItem("Automatic (react to Claude Code)", #selector(toggleFollow), "")
+        auto.state = prefs.followBridge ? .on : .off
+        moodMenu.addItem(auto)
+        let holdHeader = NSMenuItem(title: "— or hold one —", action: nil, keyEquivalent: "")
+        holdHeader.isEnabled = false
+        moodMenu.addItem(holdHeader)
         for state in PetState.allCases {
             let item = makeItem(state.rawValue, #selector(pickState(_:)), "")
             item.representedObject = state.rawValue
             item.state = (!prefs.followBridge && controller.state == state) ? .on : .off
-            stateMenu.addItem(item)
+            moodMenu.addItem(item)
         }
-        stateItem.submenu = stateMenu
-        menu.addItem(stateItem)
+        moodItem.submenu = moodMenu
+        menu.addItem(moodItem)
         menu.addItem(.separator())
 
-        let watch = makeItem(prefs.watchMode ? "Watching Claude Code (live)" : "Watch Claude Code (live)",
-                             #selector(toggleWatch), "")
+        let watch = makeItem("Watch mode (live updates)", #selector(toggleWatch), "")
         watch.state = prefs.watchMode ? .on : .off
-        watch.toolTip = "Follow Claude Code by reading its session transcripts — no settings.json, no restart."
+        watch.toolTip = "The live-signal source: reads Claude Code's session transcripts so Khosrow can react in Automatic mode — no settings.json, no restart."
         menu.addItem(watch)
 
-        let detail = makeItem("Show detail (what he's doing)", #selector(toggleDetail), "")
+        let detail = makeItem("Show detail (files & commands)", #selector(toggleDetail), "")
         detail.state = prefs.detailMode ? .on : .off
-        detail.toolTip = "Surface the current file / command / prompt. Off by default — it shows real content."
+        detail.toolTip = "Adds the current file / command / prompt to the right-click info. Off by default — it surfaces real content."
         menu.addItem(detail)
         menu.addItem(.separator())
 
@@ -377,7 +405,12 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func toggleWatch() {
         prefs.watchMode.toggle()
-        if prefs.watchMode { startWatcher() } else { stopWatcher() }
+        if prefs.watchMode {
+            prefs.followBridge = true   // turning on the live source implies "react to it"
+            startWatcher()
+        } else {
+            stopWatcher()
+        }
         store.save(prefs); rebuildMenu()
     }
 
