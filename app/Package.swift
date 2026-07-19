@@ -20,6 +20,7 @@ let package = Package(
                 // .copy (not .process) so our pixel-exact PNG is never re-encoded.
                 .copy("Resources/khosrow.runtime.json"),
                 .copy("Resources/khosrow-spritesheet.png"),
+                .copy("Resources/faravahar-menubar.png"),
             ]
         ),
         // AppKit UI. Compiled in CI; not run there (needs a real macOS session).

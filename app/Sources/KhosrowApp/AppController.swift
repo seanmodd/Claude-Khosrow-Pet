@@ -146,10 +146,27 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         if let button = statusItem.button {
-            button.title = "🦁"
+            if let icon = Self.menuBarIcon() {
+                button.image = icon
+                button.imagePosition = .imageOnly
+            } else {
+                button.title = "🦁" // fallback if the glyph asset is missing
+            }
             button.toolTip = manifest.pet.displayName
         }
         rebuildMenu()
+    }
+
+    /// The Faravahar menu-bar glyph as a template image (auto-tints for light /
+    /// dark menu bars), sized to the standard status-bar height.
+    private static func menuBarIcon() -> NSImage? {
+        guard let url = KhosrowResources.menuBarIconURL(),
+              let image = NSImage(contentsOf: url) else { return nil }
+        let height: CGFloat = 18
+        let width = image.size.height > 0 ? image.size.width / image.size.height * height : height
+        image.size = NSSize(width: width, height: height)
+        image.isTemplate = true
+        return image
     }
 
     private func rebuildMenu() {

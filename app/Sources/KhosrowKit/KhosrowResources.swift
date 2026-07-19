@@ -38,4 +38,10 @@ public enum KhosrowResources {
         let data = try Data(contentsOf: runtimeManifestURL())
         return try RuntimeManifest.decode(from: data)
     }
+
+    /// URL of the Faravahar menu-bar glyph (a template PNG), if bundled.
+    /// Optional: the app falls back to a text glyph when it is absent.
+    public static func menuBarIconURL() -> URL? {
+        Bundle.module.url(forResource: "faravahar-menubar", withExtension: "png")
+    }
 }
