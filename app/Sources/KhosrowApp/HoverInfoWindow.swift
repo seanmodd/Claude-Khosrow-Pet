@@ -25,10 +25,13 @@ private final class TrackingView: NSView {
 final class HoverInfoWindow: NSWindow {
     var onDismiss: (() -> Void)?
     var onPopupHover: ((Bool) -> Void)?
+    var onPinToggle: ((Bool) -> Void)?
 
     private let card = TrackingView()
     private let stack = NSStackView()
     private let closeButton = NSButton()
+    private let pinButton = NSButton()
+    private(set) var pinned = false
     private var padLeading: NSLayoutConstraint!
     private var padTrailing: NSLayoutConstraint!
     private var padTop: NSLayoutConstraint!
@@ -63,6 +66,16 @@ final class HoverInfoWindow: NSWindow {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(closeButton)
 
+        pinButton.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "Pin")
+        pinButton.imagePosition = .imageOnly
+        pinButton.isBordered = false
+        pinButton.contentTintColor = NSColor(calibratedWhite: 0.45, alpha: 1)
+        pinButton.target = self
+        pinButton.action = #selector(pinTapped)
+        pinButton.toolTip = "Pin — keep this open when you click away"
+        pinButton.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(pinButton)
+
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -75,6 +88,8 @@ final class HoverInfoWindow: NSWindow {
             padLeading, padTrailing, padTop, padBottom,
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 6),
             card.trailingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 6),
+            pinButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            closeButton.leadingAnchor.constraint(equalTo: pinButton.trailingAnchor, constant: 2),
         ])
     }
 
@@ -83,11 +98,30 @@ final class HoverInfoWindow: NSWindow {
 
     @objc private func closeTapped() { onDismiss?() }
 
+    @objc private func pinTapped() {
+        pinned.toggle()
+        updatePinIcon()
+        onPinToggle?(pinned)
+    }
+
+    /// Set the pinned state programmatically (e.g. reset when re-shown).
+    func setPinned(_ on: Bool) {
+        pinned = on
+        updatePinIcon()
+    }
+
+    private func updatePinIcon() {
+        pinButton.image = NSImage(systemSymbolName: pinned ? "pin.fill" : "pin",
+                                  accessibilityDescription: pinned ? "Unpin" : "Pin")
+        pinButton.contentTintColor = pinned ? .controlAccentColor
+                                            : NSColor(calibratedWhite: 0.45, alpha: 1)
+    }
+
     /// Rebuild the card content and resize to fit.
     func update(title: String, lines: [String], scale: CGFloat) {
         let s = max(0.6, min(scale, 3.0))
         let pad = 12 * s
-        padLeading.constant = pad; padTrailing.constant = pad + 14 * s
+        padLeading.constant = pad; padTrailing.constant = pad + 30 * s   // room for pin + ✕
         padTop.constant = pad * 0.85; padBottom.constant = pad * 0.85
         stack.spacing = 3 * s
         card.layer?.cornerRadius = 12 * s
@@ -113,7 +147,7 @@ final class HoverInfoWindow: NSWindow {
 
         stack.layoutSubtreeIfNeeded()
         let fit = stack.fittingSize
-        setContentSize(NSSize(width: ceil(fit.width + pad * 2 + 14 * s),
+        setContentSize(NSSize(width: ceil(fit.width + pad * 2 + 30 * s),
                               height: ceil(fit.height + pad * 1.7)))
     }
 }

@@ -85,7 +85,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - 🆕 **Watch mode** — follows Claude Code by reading its own session transcripts: **no `settings.json` edit, no restart**
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
-- 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* (drag it, or ✕ to dismiss; same info on **right‑click**, plus controls)
+- 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* — **📌 pin** it to keep it open when you click away or focus elsewhere, **drag** it anywhere, or **✕** to dismiss (same info on **right‑click**, plus controls)
 - 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** sends a message straight to your session, **💡 Suggest** drafts the best reply for you (asks `claude` for the ideal next message), or **Open in Claude** focuses the app. **Drag** it anywhere, **minimize** it, or **✕** it — popups never block each other
 - 🆕 **Response timer** — while Claude composes a reply, a small ring near him estimates how far along it is (elapsed seconds + a filling arc), so you can tell a quick answer from a long one at a glance
 - **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**

@@ -223,7 +223,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let band = pillBandHeight()
         pill.frame = NSRect(x: (spriteSize().width - sz.width) / 2,
                             y: (band - sz.height) / 2, width: sz.width, height: sz.height)
-        if isHovering { refreshHoverInfo() }
+        if isHovering || hoverInfo?.pinned == true { refreshHoverInfo() }
         if state != previousState {
             maybeNotify(from: previousState, to: state)   // notify when he stops working
             handleTurnProgress(to: state)                 // update the response-progress ring
@@ -241,14 +241,17 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func showHoverInfo() {
-        // Never stack on top of a visible notification bubble.
-        if notificationBubble?.isVisible == true { return }
+        // Don't stack on a visible notification — unless the popup is pinned open.
+        if notificationBubble?.isVisible == true, hoverInfo?.pinned != true { return }
         if hoverInfo == nil {
             let h = HoverInfoWindow()
-            h.onDismiss = { [weak self] in self?.hideHoverInfo() }
+            h.onDismiss = { [weak self] in self?.dismissHoverInfo() }
             h.onPopupHover = { [weak self] inside in
                 if inside { self?.hoverHideWork?.cancel(); self?.hoverHideWork = nil }
                 else { self?.scheduleHoverHide() }
+            }
+            h.onPinToggle = { [weak self] pinned in
+                if !pinned { self?.scheduleHoverHide() }   // unpinned → hide on next move-away
             }
             hoverInfo = h
         }
@@ -258,8 +261,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Hide after a short grace period, so moving the cursor onto the popup
-    /// (to drag or dismiss it) doesn't make it vanish.
+    /// (to pin, drag, or dismiss it) doesn't make it vanish. Pinned = never.
     private func scheduleHoverHide() {
+        guard hoverInfo?.pinned != true else { return }
         hoverHideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.hideHoverInfo() }
         hoverHideWork = work
@@ -267,6 +271,14 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func hideHoverInfo() {
+        guard hoverInfo?.pinned != true else { return }    // a pinned popup stays put
+        isHovering = false
+        hoverInfo?.orderOut(nil)
+    }
+
+    /// The ✕ on the popup: always hide and clear the pin.
+    private func dismissHoverInfo() {
+        hoverInfo?.setPinned(false)
         isHovering = false
         hoverInfo?.orderOut(nil)
     }
@@ -274,7 +286,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func refreshHoverInfo() {
         let info = actionExplanation()
         hoverInfo?.update(title: info.title, lines: info.lines, scale: CGFloat(prefs.uiFontScale))
-        positionHoverInfo()
+        if hoverInfo?.pinned != true { positionHoverInfo() }   // leave a pinned/dragged popup put
     }
 
     private func positionHoverInfo() {
