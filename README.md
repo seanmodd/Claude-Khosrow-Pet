@@ -25,14 +25,15 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 
 ---
 
-## 🎬 His ten moods
+## 🎬 His eleven moods
 
-> Every mood is a real animation pulled straight from Khosrow's sprite sheet — exactly what you see on your desktop. He switches automatically based on Claude Code activity, or you can pin any one by hand from the menu.
+> Every mood is a real animation — the hand‑drawn scenes (sleeping, reading, writing, success) or a clip from Khosrow's sprite sheet — exactly what you see on your desktop. He switches automatically based on Claude Code activity, or you can pin any one by hand from the menu.
 
 <table>
   <tr>
     <td align="center"><img src="docs/media/states/idle.gif" width="140"><br><b>idle</b><br><sub>resting</sub></td>
     <td align="center"><img src="docs/media/states/attentive.gif" width="140"><br><b>attentive</b><br><sub>listening</sub></td>
+    <td align="center"><img src="docs/media/states/writing.gif" width="140"><br><b>writing</b><br><sub>composing a reply</sub></td>
     <td align="center"><img src="docs/media/states/reading.gif" width="140"><br><b>reading</b><br><sub>reading a file</sub></td>
     <td align="center"><img src="docs/media/states/searching.gif" width="140"><br><b>searching</b><br><sub>scanning code</sub></td>
     <td align="center"><img src="docs/media/states/editing.gif" width="140"><br><b>editing</b><br><sub>editing files</sub></td>
@@ -48,15 +49,16 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 
 ### What each state means — and exactly what triggers it
 
-Khosrow has **one** set of ten states. What *drives* them is a live signal that can come from **either** source you turn on:
+Khosrow has **one** set of eleven states. What *drives* them is a live signal that can come from **either** source you turn on:
 
 - **Hook bridge** — Claude Code fires a hook on each lifecycle event (`PreToolUse`, `Stop`, `SessionEnd`, …); the bridge maps that event to a state. Precise, immediate, and it can see permission prompts and clean finishes.
 - **Watch mode** — no install: the pet reads Claude Code's own session transcript and *infers* the state from the newest entry. It sees the same tools, but it can't see a permission prompt or a "turn finished cleanly" signal, so **`waitingForPermission` and `success` are hook‑only** — in Watch mode a clean finish simply settles back to **idle**.
 
 | State | What it means | Fires on — **hook bridge** | Fires on — **Watch mode** |
 |-------|---------------|-----------------------------|----------------------------|
-| 🧍 **idle** | At rest — nothing is running, or a tool just finished cleanly | `PostToolUse` (ok) · `SubagentStop` | ~25 s of transcript quiet |
-| 🙌 **attentive** | Engaged & listening — a turn is starting | `SessionStart` · `UserPromptSubmit` · `Task`/`Agent` | a new prompt, or Claude is thinking / replying |
+| 🧍 **idle** | At rest — nothing is running | `SubagentStop` · a quiet gap | ~25 s of transcript quiet |
+| 🙌 **attentive** | Engaged — a session or sub‑task just started | `SessionStart` · `Task`/`Agent` | a session / sub‑task start |
+| 📝 **writing** | Composing a response to your prompt | `UserPromptSubmit` · `PostToolUse` (between tools) | you sent a prompt (no reply yet), or Claude is writing prose — **held for the whole turn so he never dozes off mid‑answer** |
 | 📖 **reading** | Reading a file | `PreToolUse` · `Read`, `NotebookRead` | those same tools in the transcript |
 | 🔎 **searching** | Scanning the codebase or the web | `PreToolUse` · `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch` · `SubagentStart` | those same tools |
 | ✍️ **editing** | Changing files | `PreToolUse` · `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Update` | those same tools |
@@ -66,7 +68,7 @@ Khosrow has **one** set of ten states. What *drives* them is a live signal that 
 | 🙇 **failure** | A tool or turn just failed | `PostToolUseFailure` · `StopFailure` · any `success:false` | a tool result marked `is_error` |
 | 😴 **sleeping** | The session is over — he tucks into bed | `SessionEnd` | ~4 min of transcript quiet |
 
-<sub>You can always **pin** any state by hand from **Mood ▸** (that's *Hold* mode — he ignores Claude Code until you switch back to *Automatic*). Some states deliberately share a pose — **attentive** and **waitingForPermission** both use the open‑armed *present* clip — because the source art has no dedicated frames for them. The full, tunable event→state map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>; the hook table is in <a href="docs/CLAUDE-HOOKS.md">docs/CLAUDE-HOOKS.md</a>.</sub>
+<sub>You can always **pin** any state by hand from **Mood ▸** (that's *Hold* mode — he ignores Claude Code until you switch back to *Automatic*). A couple of states share art: **attentive** and **waitingForPermission** use the open‑armed *present* clip, and **writing** reuses the hand‑drawn book scene from **reading** until dedicated writing frames are added. The full, tunable event→state map lives in <a href="docs/ANIMATION-MAPPING.md">docs/ANIMATION-MAPPING.md</a>; the hook table is in <a href="docs/CLAUDE-HOOKS.md">docs/CLAUDE-HOOKS.md</a>.</sub>
 
 ---
 
@@ -79,7 +81,7 @@ Khosrow has **one** set of ten states. What *drives* them is a live signal that 
 
 - **Float** above every window — transparent & borderless; **drag** him anywhere (**remembers his spot per display**)
 - **Click‑through** mode — clicks pass to whatever's beneath
-- **Reacts live** to Claude Code across **10 moods** — via hooks **or** hook‑free **Watch mode**
+- **Reacts live** to Claude Code across **11 moods** — via hooks **or** hook‑free **Watch mode**
 - 🆕 **Watch mode** — follows Claude Code by reading its own session transcripts: **no `settings.json` edit, no restart**
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
@@ -111,7 +113,7 @@ Every control lives behind the **Faravahar** glyph in your menu bar:
 
 - **Pause / Resume** — freeze or resume the animation
 - **Sleep / Wake** — curl up & dim, or return to idle
-- **State ▸** — *Follow Claude Code*, or pin any of the 10 moods by hand
+- **State ▸** — *Follow Claude Code*, or pin any of the 11 moods by hand
 - **Watch Claude Code (live)** — follow his transcripts with **no install, no restart**
 - **Show detail** — opt‑in: surface the current file / command / prompt
 - **Click‑through** — let the mouse pass beneath him
@@ -145,7 +147,7 @@ swift run KhosrowApp        # the Faravahar appears in the menu bar; Khosrow nea
 **See every mood without Claude Code:**
 
 ```bash
-python3 bridge/simulate_states.py --cycle              # visit all 10 moods
+python3 bridge/simulate_states.py --cycle              # visit all 11 moods
 python3 bridge/simulate_events.py --scenario session   # a scripted work session
 ```
 

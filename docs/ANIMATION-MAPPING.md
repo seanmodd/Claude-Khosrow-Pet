@@ -4,7 +4,7 @@ Two layers are documented here:
 
 1. **Clips** — the 11 physical animation rows on the sheet, with inferred
    identities and the evidence for each.
-2. **State map** — how the 10 normalized Claude Code pet-states map onto those
+2. **State map** — how the 11 normalized Claude Code pet-states map onto those
    clips (a tunable UX decision).
 
 Both are encoded authoritatively in
@@ -63,7 +63,7 @@ ordering later becomes authoritative, only the `CLIPS`/`STATES` tables in
 
 ## 2. State map (Claude Code → clip)
 
-The bridge (Phase 3) normalizes Claude Code activity into 10 states. Each maps
+The bridge (Phase 3) normalizes Claude Code activity into 11 states. Each maps
 to a clip below. This is a **design** layer: edit the `STATES` table in
 `scripts/build_runtime_manifest.py`, re-run it, and the app + tests pick up the
 change.
@@ -71,7 +71,8 @@ change.
 | Claude state | Clip | Playback | Rationale |
 |--------------|------|----------|-----------|
 | `idle` | `idle` | loop 6 fps | Default resting stance. |
-| `attentive` | `present` | loop 10 fps | Arms-open "I'm listening" right after a prompt is submitted. |
+| `attentive` | `present` | loop 10 fps | Arms-open "I'm listening" when a session or sub-task starts. |
+| `writing` | bundled † (`idle_guard`) | loop 6 fps | **Composing a response to your prompt** — reuses the `khosrow-reading-*` book frames until dedicated `khosrow-writing-*` art exists. |
 | `reading` | bundled † (`idle_guard`) | loop 5 fps | **Hand-drawn `khosrow-reading-*` frames** — reads an open book (page-turn mid-cycle). |
 | `searching` | `walk_right` | loop 12 fps | Moves/scans — searching the codebase. |
 | `editing` | `ready` | loop 10 fps | Actively handling the sword = editing files. |
@@ -81,21 +82,25 @@ change.
 | `failure` | `bow` | once → hold 10 fps | Head-down bow reads as apology/defeat. |
 | `sleeping` | bundled † (`idle`) | loop 4 fps | **Hand-drawn `khosrow-sleeping-*` frames** — sleeps in a drawn bed. |
 
-† **Bundled-frame states.** `reading`, `success`, and `sleeping` render a
-hand-drawn transparent 192×208 frame sequence (`Resources/khosrow-<state>-*.png`,
+† **Bundled-frame states.** `writing`, `reading`, `success`, and `sleeping` render
+a hand-drawn transparent 192×208 frame sequence (`Resources/khosrow-<state>-*.png`,
 played by `PetController.customAnims` on its own fps clock) instead of a sheet
 clip. The clip in parentheses is the **fallback** used only if those frames are
 missing from the bundle; its fps/loop in the manifest applies to that fallback.
+`writing` has no dedicated art yet, so it reuses the `reading` book frames.
 
 ### Documented reuses / compromises
 
-The sheet has 11 clips but no *dedicated* poses for a few states. Three of them
-(`reading`, `success`, `sleeping`) now ship **hand-drawn bundled frames** (see the
-† note above); the remaining compromise reuses a clip:
+The sheet has 11 clips but no *dedicated* poses for a few states. Several now ship
+**hand-drawn bundled frames** (see the † note above); the remaining compromises
+reuse a clip or another state's art:
 
 - **`waitingForPermission` reuses `present`** (shared with `attentive`). Both are
   "engaged, awaiting your input." A future build can add a distinct affordance
   (e.g. a "?" bubble) without new art.
+- **`writing` reuses the `reading` book frames** until dedicated
+  `khosrow-writing-*` art is added — both are book scenes, told apart by the mood
+  label under the pet.
 - **`reading` / `success` / `sleeping` use bundled frames**, not the sheet — a
   book-reading loop, a triumphant sword-raise, and a sleeping-in-bed scene
   respectively. Each falls back to a sheet clip (`idle_guard` / `cheer` / `idle`)

@@ -8,7 +8,8 @@ final class StateMappingTests: XCTestCase {
     func testLifecycleEventsMapToExpectedStates() {
         XCTAssertEqual(StateMapper.map(event: .sessionStart), .attentive)
         XCTAssertEqual(StateMapper.map(event: .sessionEnd), .sleeping)
-        XCTAssertEqual(StateMapper.map(event: .userPromptSubmit), .attentive)
+        // A submitted prompt means Claude is now composing a response.
+        XCTAssertEqual(StateMapper.map(event: .userPromptSubmit), .writing)
         XCTAssertEqual(StateMapper.map(event: .permissionRequest), .waitingForPermission)
         XCTAssertEqual(StateMapper.map(event: .notification), .waitingForPermission)
         XCTAssertEqual(StateMapper.map(event: .subagentStart), .searching)
@@ -26,9 +27,10 @@ final class StateMappingTests: XCTestCase {
         // Dedicated failure event is unconditional (ignores the success flag).
         XCTAssertEqual(StateMapper.map(event: .postToolUseFailure), .failure)
         XCTAssertEqual(StateMapper.map(event: .postToolUseFailure, success: true), .failure)
-        // PostToolUse success path must not read as failure.
-        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: true), .idle)
-        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: nil), .idle)
+        // PostToolUse success path must not read as failure; it now maps to
+        // `writing` (composing the next step) so the pet stays active mid-turn.
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: true), .writing)
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: nil), .writing)
         XCTAssertNotEqual(StateMapper.map(event: .postToolUse, success: true), .failure)
     }
 
@@ -51,8 +53,8 @@ final class StateMappingTests: XCTestCase {
 
     func testPostToolUseOutcome() {
         XCTAssertEqual(StateMapper.map(event: .postToolUse, success: false), .failure)
-        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: true), .idle)
-        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: nil), .idle)
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: true), .writing)
+        XCTAssertEqual(StateMapper.map(event: .postToolUse, success: nil), .writing)
     }
 
     func testToolNameCategorization() {
@@ -76,6 +78,8 @@ final class StateMappingTests: XCTestCase {
         XCTAssertEqual(PetState(loose: "grep"), .searching)
         XCTAssertEqual(PetState(loose: "error"), .failure)
         XCTAssertEqual(PetState(loose: "sleep"), .sleeping)
+        XCTAssertEqual(PetState(loose: "writing"), .writing)
+        XCTAssertEqual(PetState(loose: "composing"), .writing)
         XCTAssertNil(PetState(loose: "banana"))
     }
 

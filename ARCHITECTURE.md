@@ -49,7 +49,7 @@ where the logic — and the tests — live.
 | `RuntimeManifest.swift` | Decode the derived atlas; resolve state→clip, fps, validation. |
 | `FrameGeometry.swift` | Pure pixel-rect math: `rect(clipRow:frameIndex:)`. |
 | `AnimationPlayer.swift` | Time-based playback state machine (loop/once, manual step). |
-| `PetState.swift` | The closed set of 10 states + lenient parsing; `ToolCategory`. |
+| `PetState.swift` | The closed set of 11 states + lenient parsing; `ToolCategory`. |
 | `StateMapper.swift` | `(event, category, success) → PetState` (mirror of the Python map). |
 | `Preferences.swift` | Prefs model (+ clamping) and `SavedPosition`. |
 | `JSONValue.swift` | Minimal JSON value type + deep merge. |

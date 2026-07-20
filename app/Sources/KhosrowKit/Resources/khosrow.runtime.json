@@ -137,7 +137,14 @@
       "clip": "present",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Arms open, engaged right after a prompt."
+      "rationale": "Arms open, engaged right after a session or sub-task starts."
+    },
+    "writing": {
+      "state": "writing",
+      "clip": "idle_guard",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Composing a response to your prompt: shows the hand-drawn book frames (reuses khosrow-reading-* until dedicated khosrow-writing-* art exists)."
     },
     "reading": {
       "state": "reading",

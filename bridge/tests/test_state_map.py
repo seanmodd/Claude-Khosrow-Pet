@@ -11,7 +11,8 @@ class StateMapTests(unittest.TestCase):
     def test_lifecycle_events(self):
         self.assertEqual(core.map_state("SessionStart"), "attentive")
         self.assertEqual(core.map_state("SessionEnd"), "sleeping")
-        self.assertEqual(core.map_state("UserPromptSubmit"), "attentive")
+        # A submitted prompt means Claude is now composing a response.
+        self.assertEqual(core.map_state("UserPromptSubmit"), "writing")
         self.assertEqual(core.map_state("PermissionRequest"), "waitingForPermission")
         self.assertEqual(core.map_state("Notification"), "waitingForPermission")
         self.assertEqual(core.map_state("SubagentStart"), "searching")
@@ -34,9 +35,11 @@ class StateMapTests(unittest.TestCase):
         self.assertEqual(core.map_state("PostToolUseFailure", "command", True), "failure")
 
     def test_post_tool_use_success_is_never_failure(self):
-        # PostToolUse is the success path; it must not read as failure.
-        self.assertEqual(core.map_state("PostToolUse", "command", True), "idle")
-        self.assertEqual(core.map_state("PostToolUse", "command", None), "idle")
+        # PostToolUse is the success path; it must not read as failure. It now
+        # maps to `writing` (Claude composing the next step) rather than idle, so
+        # the pet stays active between tools instead of flickering to rest.
+        self.assertEqual(core.map_state("PostToolUse", "command", True), "writing")
+        self.assertEqual(core.map_state("PostToolUse", "command", None), "writing")
         self.assertNotEqual(core.map_state("PostToolUse", "command", True), "failure")
         self.assertNotEqual(core.map_state("PostToolUse", "command", None), "failure")
 
@@ -57,8 +60,8 @@ class StateMapTests(unittest.TestCase):
 
     def test_post_tool_use_outcome(self):
         self.assertEqual(core.map_state("PostToolUse", "command", False), "failure")
-        self.assertEqual(core.map_state("PostToolUse", "command", True), "idle")
-        self.assertEqual(core.map_state("PostToolUse", "command", None), "idle")
+        self.assertEqual(core.map_state("PostToolUse", "command", True), "writing")
+        self.assertEqual(core.map_state("PostToolUse", "command", None), "writing")
 
     def test_categorize(self):
         self.assertEqual(core.categorize("Read"), "file-read")

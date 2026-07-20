@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 
 # The complete, closed set of states the pet understands.
 STATES = [
-    "idle", "attentive", "reading", "searching", "editing", "runningCommand",
-    "waitingForPermission", "success", "failure", "sleeping",
+    "idle", "attentive", "writing", "reading", "searching", "editing",
+    "runningCommand", "waitingForPermission", "success", "failure", "sleeping",
 ]
 
 # Coarse tool categories (a tool's *arguments* are never retained).
@@ -77,15 +77,16 @@ def map_state(event: str, category: str | None = None, success: bool | None = No
     if event == "SessionEnd":
         return "sleeping"
     if event == "UserPromptSubmit":
-        return "attentive"
+        # You just sent a prompt: Claude is now composing a response.
+        return "writing"
     if event == "PreToolUse":
         return state_for_tool(category)
     if event == "PostToolUse":
-        # PostToolUse fires only on a *successful* tool call in current Claude
-        # Code (failures go to PostToolUseFailure). We keep a defensive
-        # `success is False -> failure` fallback so a failure is never dropped on
-        # builds that route it here instead.
-        return "failure" if success is False else "idle"
+        # A tool just finished; Claude is composing the next step. Showing
+        # `writing` (not idle) keeps the pet active between tools instead of
+        # flickering to rest mid-turn. `success is False -> failure` is a
+        # defensive fallback for builds that route failures here.
+        return "failure" if success is False else "writing"
     if event == "PostToolUseFailure":
         # Dedicated failure event — always failure, no payload parsing needed.
         return "failure"

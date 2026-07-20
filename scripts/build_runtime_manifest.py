@@ -51,7 +51,8 @@ CLIPS = [
 #   state,               clip,          override_fps, dim,   rationale
 STATES = [
     ("idle",                 "idle",        None,  False, "Default resting stance."),
-    ("attentive",            "present",     None,  False, "Arms open, engaged right after a prompt."),
+    ("attentive",            "present",     None,  False, "Arms open, engaged right after a session or sub-task starts."),
+    ("writing",              "idle_guard",  None,  False, "Composing a response to your prompt: shows the hand-drawn book frames (reuses khosrow-reading-* until dedicated khosrow-writing-* art exists)."),
     ("reading",              "idle_guard",  None,  False, "Reads an open book: bundled hand-drawn khosrow-reading-* frames (falls back to the calm idle_guard clip if absent)."),
     ("searching",            "walk_right",  None,  False, "Moves/scans while searching the codebase."),
     ("editing",              "ready",       None,  False, "Handling the sword = actively editing files."),

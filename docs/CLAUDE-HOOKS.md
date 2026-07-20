@@ -14,9 +14,9 @@ event to the minimal payload and writes it to `~/.claude-pet/state.json`.
 |------------|-----------|---------------------|
 | `SessionStart` | ✅ | `attentive` |
 | `SessionEnd` | ✅ | `sleeping` |
-| `UserPromptSubmit` | ✅ | `attentive` |
+| `UserPromptSubmit` | ✅ | `writing` (composing a reply) |
 | `PreToolUse` (matcher `*`) | ✅ | depends on tool category (below) |
-| `PostToolUse` (matcher `*`) | ✅ | `idle` (successful completions only) |
+| `PostToolUse` (matcher `*`) | ✅ | `writing` (composing the next step; success only) |
 | `PostToolUseFailure` (matcher `*`) | ✅ | `failure` |
 | `PermissionRequest` (matcher `*`) | ✅ | `waitingForPermission` |
 | `Notification` | ✅ | `waitingForPermission` (fallback) |
@@ -59,14 +59,14 @@ The canonical mapping (implemented identically in Swift `StateMapper` and Python
 |-------|----------|---------|---------|
 | SessionStart | – | – | attentive |
 | SessionEnd | – | – | sleeping |
-| UserPromptSubmit | – | – | attentive |
+| UserPromptSubmit | – | – | writing |
 | PreToolUse | file-read | – | reading |
 | PreToolUse | file-edit | – | editing |
 | PreToolUse | search | – | searching |
 | PreToolUse | command | – | runningCommand |
 | PreToolUse | network | – | searching |
 | PreToolUse | task/other/none | – | attentive |
-| PostToolUse | any | true / none | idle |
+| PostToolUse | any | true / none | writing |
 | PostToolUse | any | false | failure *(defensive fallback)* |
 | PostToolUseFailure | any | – | failure |
 | PermissionRequest | – | – | waitingForPermission |

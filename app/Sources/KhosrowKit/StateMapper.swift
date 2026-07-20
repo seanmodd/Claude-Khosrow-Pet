@@ -40,15 +40,16 @@ public enum StateMapper {
         case .sessionEnd:
             return .sleeping
         case .userPromptSubmit:
-            return .attentive
+            // You just sent a prompt: Claude is now composing a response.
+            return .writing
         case .preToolUse:
             return stateForTool(category)
         case .postToolUse:
-            // PostToolUse fires only on a *successful* tool call in current
-            // Claude Code (failures go to postToolUseFailure). The
-            // `success == false -> failure` branch is a defensive fallback so a
-            // failure is never dropped on builds that route it here instead.
-            return (success == false) ? .failure : .idle
+            // A tool just finished; Claude is composing the next step. Showing
+            // `writing` (not idle) keeps the pet active between tools instead of
+            // flickering to rest mid-turn. `success == false -> failure` is a
+            // defensive fallback for builds that route failures here.
+            return (success == false) ? .failure : .writing
         case .postToolUseFailure:
             // Dedicated failure event — always failure.
             return .failure

@@ -177,7 +177,7 @@ def derive(entry: dict, want_detail: bool):
                 det = detail_for(block.get("name"), block.get("input")) if want_detail else None
                 return (state_for(cat), cat, None, det)
         if any(isinstance(b, dict) and b.get("type") == "text" for b in content):
-            return ("attentive", None, None, None)            # thinking / replying
+            return ("writing", None, None, None)               # composing prose = writing
         return None
 
     if role == "user":
@@ -190,12 +190,56 @@ def derive(entry: dict, want_detail: bool):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
                     snippet = (block.get("text") or "").strip().replace("\n", " ")
-                    return ("attentive", None, None, snippet[:80] or None if want_detail else None)
+                    return ("writing", None, None, snippet[:80] or None if want_detail else None)
             return None
         if isinstance(content, str):                           # plain-string prompt
             snippet = content.strip().replace("\n", " ")
-            return ("attentive", None, None, snippet[:80] or None if want_detail else None)
+            return ("writing", None, None, snippet[:80] or None if want_detail else None)
     return None
+
+
+def entry_kind(entry) -> "str | None":
+    """Classify a transcript entry for turn-progress tracking.
+
+    Returns 'user_prompt' | 'tool_use' | 'tool_result' | 'assistant_text' | None.
+    Used to tell whether a turn is *in progress* even when no new lines are being
+    written (Claude composing a response), so the pet doesn't falsely go to sleep.
+    """
+    if not isinstance(entry, dict) or entry.get("type") not in ("assistant", "user"):
+        return None
+    message = entry.get("message") or {}
+    role = message.get("role")
+    content = message.get("content")
+    if role == "assistant":
+        if isinstance(content, list):
+            if any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content):
+                return "tool_use"
+            if any(isinstance(b, dict) and b.get("type") == "text" for b in content):
+                return "assistant_text"
+        return "assistant_text"
+    if role == "user":
+        if isinstance(content, list):
+            if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+                return "tool_result"
+            if any(isinstance(b, dict) and b.get("type") == "text" for b in content):
+                return "user_prompt"
+            return None
+        if isinstance(content, str):
+            return "user_prompt"
+    return None
+
+
+def last_entry_kind(path: str) -> "str | None":
+    """The kind of the most recent classifiable entry (to init state on switch)."""
+    kind = None
+    for line in _read_tail(path).splitlines():
+        try:
+            k = entry_kind(json.loads(line))
+        except Exception:
+            k = None
+        if k is not None:
+            kind = k
+    return kind
 
 
 def build_payload(state, cat, success, detail, session=None, session_label=None):
@@ -266,10 +310,10 @@ def run(args):
     idle_after, sleep_after = args.idle_after, args.sleep_after
     target_id = None if (not args.session or args.session == "auto") else args.session
     current, current_session, last_activity = None, None, time.time()
-    path, pos, session_id, session_label = None, 0, None, None
+    path, pos, session_id, session_label, tail_kind = None, 0, None, None, None
 
     def switch(p):
-        nonlocal path, pos, session_id, session_label, last_activity
+        nonlocal path, pos, session_id, session_label, last_activity, tail_kind
         path = p
         try:
             pos = os.path.getsize(p)                 # start at the end (react to *new* activity)
@@ -277,6 +321,9 @@ def run(args):
             pos = 0
         meta = session_meta(p, allow_prompt=args.detail)
         session_id, session_label = meta["id"], meta["label"]
+        # Seed the turn-progress tracker from the existing tail, so at startup we
+        # already know whether a response is in progress.
+        tail_kind = last_entry_kind(p)
         # Restart the idle/sleep window for the newly-watched session, so a
         # session that just became active isn't immediately tagged with a stale
         # idle/sleeping state carried over from the previous one.
@@ -310,18 +357,33 @@ def run(args):
                     pos = fh.tell()
                 for line in new_lines:
                     try:
-                        got = derive(json.loads(line), args.detail)
+                        obj = json.loads(line)
                     except Exception:
-                        got = None
+                        continue
+                    k = entry_kind(obj)
+                    if k is not None:
+                        tail_kind = k
+                    got = derive(obj, args.detail)
                     if got is not None:
                         derived = got
                 if derived is not None:
                     last_activity = monotonic
 
+        # Decide the state. A turn can be *in progress* with no new lines being
+        # written (Claude composing a response) — detected via tail_kind — so we
+        # show `writing` and hold off idle/sleep instead of falsely resting.
         if derived is not None:
             new_state = derived
+        elif tail_kind == "user_prompt":             # your prompt, no reply yet
+            new_state = ("writing", None, None, None)
+            last_activity = monotonic                # turn in progress; stay awake
+        elif tail_kind == "tool_use":                # a tool is still running
+            last_activity = monotonic                # stay awake; hold current state
+            new_state = None
         elif monotonic - last_activity > sleep_after:
             new_state = ("sleeping", None, None, None)
+        elif tail_kind == "tool_result":             # tool done; composing next step
+            new_state = ("writing", None, None, None)
         elif monotonic - last_activity > idle_after:
             new_state = ("idle", None, None, None)
         else:

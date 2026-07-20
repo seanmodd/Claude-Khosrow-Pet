@@ -5,6 +5,7 @@ import Foundation
 public enum PetState: String, CaseIterable, Codable, Equatable {
     case idle
     case attentive
+    case writing
     case reading
     case searching
     case editing
@@ -22,7 +23,8 @@ public enum PetState: String, CaseIterable, Codable, Equatable {
         case "run", "running", "command", "bash", "exec": self = .runningCommand
         case "read", "view", "cat": self = .reading
         case "search", "grep", "find", "glob": self = .searching
-        case "edit", "write", "patch": self = .editing
+        case "edit", "patch", "modify": self = .editing
+        case "write", "writing", "compose", "composing", "responding", "thinking", "replying": self = .writing
         case "permission", "waiting", "approval", "confirm": self = .waitingForPermission
         case "ok", "done", "passed", "green": self = .success
         case "error", "failed", "fail", "red": self = .failure

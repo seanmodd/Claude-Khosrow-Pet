@@ -18,9 +18,9 @@ more:
 }
 ```
 
-- `state` — one of ten fixed labels: `idle`, `attentive`, `reading`,
-  `searching`, `editing`, `runningCommand`, `waitingForPermission`, `success`,
-  `failure`, `sleeping`.
+- `state` — one of eleven fixed labels: `idle`, `attentive`, `writing`,
+  `reading`, `searching`, `editing`, `runningCommand`, `waitingForPermission`,
+  `success`, `failure`, `sleeping`.
 - `toolCategory` — one of seven coarse buckets: `file-read`, `file-edit`,
   `search`, `command`, `network`, `task`, `other` (or `null`).
 - `timestamp` — ISO-8601 time the event was processed.

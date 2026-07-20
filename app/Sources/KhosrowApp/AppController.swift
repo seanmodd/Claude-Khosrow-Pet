@@ -154,10 +154,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private static let moodVerbs: [PetState: String] = [
-        .idle: "resting", .attentive: "listening", .reading: "reading a file",
-        .searching: "searching", .editing: "editing", .runningCommand: "running a command",
-        .waitingForPermission: "waiting for permission", .success: "celebrating a win",
-        .failure: "recovering from an error", .sleeping: "sleeping",
+        .idle: "resting", .attentive: "listening", .writing: "writing a response",
+        .reading: "reading a file", .searching: "searching", .editing: "editing",
+        .runningCommand: "running a command", .waitingForPermission: "waiting for permission",
+        .success: "celebrating a win", .failure: "recovering from an error", .sleeping: "sleeping",
     ]
     private func moodVerb(_ s: PetState) -> String { Self.moodVerbs[s] ?? s.rawValue }
 
@@ -218,7 +218,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         // Automatic mode: he mirrors Claude Code.
         let why: [PetState: String] = [
             .idle: "Nothing is running right now (or a tool just finished cleanly).",
-            .attentive: "You just sent a prompt, or a session / sub-task started.",
+            .attentive: "A Claude Code session or sub-task just started.",
+            .writing: "Claude Code is composing a response to your prompt.",
             .reading: "Claude Code is reading a file.",
             .searching: "Claude Code is searching or browsing the codebase.",
             .editing: "Claude Code is editing a file.",

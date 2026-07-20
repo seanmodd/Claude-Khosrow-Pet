@@ -56,20 +56,24 @@ final class PetController {
 
     /// Load the bundled per-state frame sequences and their playback cadence.
     private static func loadCustomAnims() -> [PetState: CustomAnim] {
-        // state -> (fps, loops). Frames are bundled transparent 192×208 PNGs.
-        let config: [(PetState, Double, Bool)] = [
-            (.sleeping, 4, true),   // slow, gentle breathing under the blanket
-            (.reading,  5, true),   // calm reading, a page-turn mid-cycle
-            (.success,  9, true),   // energetic, repeating sword-raise of triumph
-        ]
-        var out: [PetState: CustomAnim] = [:]
-        for (state, fps, loops) in config {
-            let frames = KhosrowResources.customFrameURLs(forState: state.rawValue).compactMap { url -> CGImage? in
+        func load(_ name: String) -> [CGImage] {
+            KhosrowResources.customFrameURLs(forState: name).compactMap { url -> CGImage? in
                 guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
                 return CGImageSourceCreateImageAtIndex(src, 0, nil)
             }
-            if !frames.isEmpty { out[state] = CustomAnim(frames: frames, fps: fps, loops: loops) }
         }
+        var out: [PetState: CustomAnim] = [:]
+        let sleeping = load("sleeping")
+        if !sleeping.isEmpty { out[.sleeping] = CustomAnim(frames: sleeping, fps: 4, loops: true) }
+        let reading = load("reading")
+        if !reading.isEmpty { out[.reading] = CustomAnim(frames: reading, fps: 5, loops: true) }
+        let success = load("success")
+        if !success.isEmpty { out[.success] = CustomAnim(frames: success, fps: 9, loops: true) }
+        // `writing` reuses the reading book frames (a touch livelier) until
+        // dedicated khosrow-writing-*.png art is added to Resources.
+        let writing = load("writing")
+        let writingFrames = writing.isEmpty ? reading : writing
+        if !writingFrames.isEmpty { out[.writing] = CustomAnim(frames: writingFrames, fps: 6, loops: true) }
         return out
     }
 
