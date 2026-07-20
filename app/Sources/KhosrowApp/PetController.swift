@@ -20,6 +20,8 @@ final class PetController {
     var speedMultiplier: Double = 1.0
     /// Base opacity from preferences (dimming for sleeping multiplies this).
     var baseOpacity: CGFloat = 1.0
+    /// Called after the state changes, so the app can refresh the mood pill/popup.
+    var onStateChanged: ((PetState) -> Void)?
 
     private var timer: Timer?
     private var lastTick: CFTimeInterval = 0
@@ -138,6 +140,7 @@ final class PetController {
         customFrame = 0        // restart any custom sequence for the new mood
         customAccum = 0
         renderCurrentFrame()
+        onStateChanged?(state)
     }
 
     private func applyDim(_ dim: Bool) {

@@ -9,6 +9,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var sheet: SpriteSheet!
     private var window: PetWindow!
     private var petView: PetView!
+    private var container: NSView!          // holds the sprite + the mood pill
+    private let pill = MoodPillView(frame: .zero)   // always-visible mood label beneath him
+    private var hoverInfo: HoverInfoWindow? // the "why" popup shown on hover
+    private var isHovering = false
     private var controller: PetController!
     private var skins: [Skin] = []
     private var currentSkinID = "khosrow"
@@ -41,20 +45,25 @@ final class AppController: NSObject, NSApplicationDelegate {
         if !problems.isEmpty { NSLog("Khosrow: manifest problems: \(problems)") }
         if !sheet.hasAlpha { NSLog("Khosrow: WARNING runtime PNG has no alpha channel") }
 
-        let size = windowSize()
-        petView = PetView(frame: NSRect(origin: .zero, size: size))
-        window = PetWindow(contentSize: size,
+        let sprite = spriteSize()
+        petView = PetView(frame: NSRect(x: 0, y: pillBandHeight(), width: sprite.width, height: sprite.height))
+        container = NSView(frame: NSRect(origin: .zero, size: containerSize()))
+        container.addSubview(petView)
+        container.addSubview(pill)
+        window = PetWindow(contentSize: containerSize(),
                            floatOnTop: prefs.floatOnTop,
                            showOnAllSpaces: prefs.showOnAllSpaces)
-        window.contentView = petView
+        window.contentView = container
         window.setClickThrough(prefs.clickThrough)
 
         controller = PetController(manifest: manifest, sheet: sheet, view: petView)
         controller.speedMultiplier = prefs.speedMultiplier
         controller.setBaseOpacity(CGFloat(prefs.opacity))
+        controller.onStateChanged = { [weak self] _ in self?.updateMood() }
         controller.setPaused(prefs.paused)
         controller.start()
 
+        layoutContainer()      // positions the sprite + pill, sets the initial mood label
         wireDragging()
         restorePosition()
         window.orderFront(nil)
@@ -72,19 +81,87 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: Sizing
 
-    private func windowSize() -> NSSize {
+    /// The sprite (pet) size at the current scale.
+    private func spriteSize() -> NSSize {
         let s = CGFloat(prefs.scale)
         return NSSize(width: CGFloat(manifest.sheet.cellWidth) * s,
                       height: CGFloat(manifest.sheet.cellHeight) * s)
     }
 
+    /// Height of the band reserved beneath the sprite for the mood pill.
+    private func pillBandHeight() -> CGFloat { max(20, 26 * CGFloat(prefs.scale)) }
+
+    /// The whole window (sprite + pill band).
+    private func containerSize() -> NSSize {
+        let s = spriteSize()
+        return NSSize(width: s.width, height: s.height + pillBandHeight())
+    }
+
+    /// Position the sprite (top) and the mood pill (centered in the bottom band).
+    private func layoutContainer() {
+        let sprite = spriteSize()
+        container.frame = NSRect(origin: .zero, size: containerSize())
+        petView.frame = NSRect(x: 0, y: pillBandHeight(), width: sprite.width, height: sprite.height)
+        updateMood()
+    }
+
     private func applyScale() {
-        let newSize = windowSize()
-        var frame = window.frame
-        // Keep the pet's feet anchored: grow/shrink from the bottom-left.
-        frame.size = newSize
-        window.setFrame(frame, display: true)
-        petView.frame = NSRect(origin: .zero, size: newSize)
+        resizeKeepingCenter(to: containerSize())   // "recenter": keep the unit centered
+        layoutContainer()
+    }
+
+    /// Resize the window while keeping its center point fixed on screen.
+    private func resizeKeepingCenter(to newSize: NSSize) {
+        let old = window.frame
+        let origin = NSPoint(x: old.midX - newSize.width / 2,
+                             y: old.midY - newSize.height / 2)
+        window.setFrame(NSRect(origin: origin, size: newSize), display: true)
+    }
+
+    // MARK: Mood pill + hover "why" popup
+
+    private static let pillLabels: [PetState: String] = [
+        .idle: "🧍 idle", .attentive: "🙌 attentive", .writing: "📝 writing",
+        .reading: "📖 reading", .searching: "🔎 searching", .editing: "✍️ editing",
+        .runningCommand: "🏃 running", .waitingForPermission: "✋ waiting",
+        .success: "🎉 success", .failure: "🙇 failure", .sleeping: "😴 sleeping",
+    ]
+    private func pillText(_ s: PetState) -> String { Self.pillLabels[s] ?? s.rawValue }
+
+    /// Refresh the pill's label + position for the current mood, and the popup if open.
+    private func updateMood() {
+        pill.set(text: pillText(controller.state), scale: CGFloat(prefs.scale))
+        let sz = pill.pillSize
+        let band = pillBandHeight()
+        pill.frame = NSRect(x: (spriteSize().width - sz.width) / 2,
+                            y: (band - sz.height) / 2, width: sz.width, height: sz.height)
+        if isHovering { refreshHoverInfo() }
+    }
+
+    private func setHover(_ inside: Bool) {
+        isHovering = inside
+        guard inside else { hoverInfo?.orderOut(nil); return }
+        if hoverInfo == nil { hoverInfo = HoverInfoWindow() }
+        refreshHoverInfo()
+        hoverInfo?.order(.above, relativeTo: window.windowNumber)
+    }
+
+    private func refreshHoverInfo() {
+        let info = actionExplanation()
+        hoverInfo?.update(title: info.title, lines: info.lines, scale: CGFloat(prefs.scale))
+        positionHoverInfo()
+    }
+
+    /// Sit the popup just above the pet, centered, kept on-screen.
+    private func positionHoverInfo() {
+        guard let hoverInfo, let screen = window.screen ?? NSScreen.main else { return }
+        let pet = window.frame, size = hoverInfo.frame.size, vf = screen.visibleFrame
+        var y = pet.maxY + 8 * CGFloat(prefs.scale)
+        if y + size.height > vf.maxY { y = pet.minY - size.height - 8 }   // flip below if needed
+        var x = pet.midX - size.width / 2
+        x = min(max(x, vf.minX + 4), vf.maxX - size.width - 4)
+        y = min(max(y, vf.minY + 4), vf.maxY - size.height - 4)
+        hoverInfo.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     // MARK: Dragging
@@ -95,10 +172,12 @@ final class AppController: NSObject, NSApplicationDelegate {
             let origin = window.frame.origin
             window.setFrameOrigin(NSPoint(x: origin.x + delta.width,
                                           y: origin.y + delta.height))
+            if self.isHovering { self.positionHoverInfo() }   // popup follows during a drag
         }
         petView.onDragEnded = { [weak self] in self?.savePosition() }
         petView.onClick = { [weak self] in self?.poke() }
         petView.onContextMenu = { [weak self] event in self?.showActionInfo(for: event) }
+        petView.onHover = { [weak self] inside in self?.setHover(inside) }
     }
 
     /// A bare click gives a little wave — but ONLY when Khosrow is idle and in
@@ -573,18 +652,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         currentSkinID = skin.id
         prefs.currentSkin = skin.id
 
-        let size = windowSize()
-        petView.frame = NSRect(origin: .zero, size: size)
-        var frame = window.frame
-        frame.size = size
-        window.setFrame(frame, display: true)
+        resizeKeepingCenter(to: containerSize())
 
         controller = PetController(manifest: manifest, sheet: sheet, view: petView)
         controller.speedMultiplier = prefs.speedMultiplier
         controller.setBaseOpacity(CGFloat(prefs.opacity))
+        controller.onStateChanged = { [weak self] _ in self?.updateMood() }
         controller.setPaused(prefs.paused)
         controller.start()
         controller.apply(state: keep)
+        layoutContainer()
 
         store.save(prefs); rebuildMenu()
     }

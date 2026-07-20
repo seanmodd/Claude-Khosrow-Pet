@@ -85,7 +85,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - 🆕 **Watch mode** — follows Claude Code by reading its own session transcripts: **no `settings.json` edit, no restart**
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
-- **Right‑click him** to see his current mood and *why*
+- 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* (same info on **right‑click**, plus controls)
 - **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**
 - **Menu‑bar control center** (the Faravahar glyph) + an **Animation Test Console**
 - Runs **completely standalone**; **100% native AppKit** — no Electron, no web view, never touches Claude Desktop

@@ -13,9 +13,13 @@ final class PetView: NSView {
     var onClick: (() -> Void)?
     /// Called on a right-click or control-click — shows "what is he doing, and why?".
     var onContextMenu: ((NSEvent) -> Void)?
+    /// Called when the cursor enters (true) / leaves (false) the pet — drives the
+    /// hover info popup.
+    var onHover: ((_ inside: Bool) -> Void)?
 
     private var dragOrigin: NSPoint?
     private var didDrag = false
+    private var hoverArea: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -34,6 +38,21 @@ final class PetView: NSView {
     func show(_ image: CGImage?) {
         layer?.contents = image
     }
+
+    // MARK: - Hover tracking (drives the info popup)
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
 
     /// Base opacity (0…1) for dimming (e.g. sleeping).
     func setDim(_ opacity: CGFloat) {
