@@ -18,6 +18,7 @@ final class NotificationBubbleWindow: NSWindow {
     private let stampLabel = NSTextField(labelWithString: "")
     private let bodyLabel = NSTextField(wrappingLabelWithString: "")
     private let dismissButton = NSButton()
+    private let minimizeButton = NSButton()
     private let replyButton = NSButton()
     private let suggestButton = NSButton()
     private let openButton = NSButton()
@@ -30,6 +31,7 @@ final class NotificationBubbleWindow: NSWindow {
 
     private var uiScale: CGFloat = 1
     private var canReply = true
+    private var minimized = false
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 120),
@@ -38,6 +40,7 @@ final class NotificationBubbleWindow: NSWindow {
         backgroundColor = .clear
         hasShadow = true
         level = .floating
+        isMovableByWindowBackground = true      // drag the card to move it
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         card.wantsLayer = true
@@ -55,6 +58,7 @@ final class NotificationBubbleWindow: NSWindow {
         bodyLabel.textColor = NSColor(calibratedWhite: 0.17, alpha: 1)
 
         styleIcon(dismissButton, symbol: "xmark", fallback: "✕", action: #selector(dismissTapped))
+        styleIcon(minimizeButton, symbol: "minus", fallback: "–", action: #selector(minimizeTapped))
         styleText(replyButton, title: "↩ Reply", action: #selector(replyTapped))
         styleText(suggestButton, title: "💡 Suggest", action: #selector(suggestTapped))
         styleText(openButton, title: "Open in Claude", action: #selector(openTapped))
@@ -72,9 +76,10 @@ final class NotificationBubbleWindow: NSWindow {
         replyField.target = self
         replyField.action = #selector(sendTapped)   // Enter sends
 
-        let header = NSStackView(views: [titleLabel, dismissButton])
+        let header = NSStackView(views: [titleLabel, minimizeButton, dismissButton])
         header.orientation = .horizontal
         header.alignment = .centerY
+        header.spacing = 6
         header.distribution = .fill
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
@@ -132,6 +137,9 @@ final class NotificationBubbleWindow: NSWindow {
 
         replyRow.isHidden = true
         actionRow.isHidden = false
+        stampLabel.isHidden = false
+        minimized = false
+        minimizeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: nil)
         replyField.isEnabled = true; sendButton.isEnabled = true
         replyField.placeholderString = "Reply to Claude…"
         resize()
@@ -195,6 +203,19 @@ final class NotificationBubbleWindow: NSWindow {
     @objc private func replyTapped() { showReplyField() }
     @objc private func suggestTapped() { onSuggest?() }
     @objc private func openTapped() { onOpenSession?() }
+    @objc private func minimizeTapped() { setMinimized(!minimized) }
+
+    /// Collapse to just the title bar (or expand back).
+    private func setMinimized(_ on: Bool) {
+        minimized = on
+        stampLabel.isHidden = on
+        bodyLabel.isHidden = on || bodyLabel.stringValue.isEmpty
+        actionRow.isHidden = on
+        if on { replyRow.isHidden = true; spinner.stopAnimation(nil) }
+        else { replyRow.isHidden = true }
+        minimizeButton.image = NSImage(systemSymbolName: on ? "plus" : "minus", accessibilityDescription: nil)
+        resize()
+    }
     @objc private func sendTapped() {
         let text = replyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }

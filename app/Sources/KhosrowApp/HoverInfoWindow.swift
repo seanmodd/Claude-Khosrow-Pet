@@ -1,14 +1,34 @@
 #if canImport(AppKit)
 import AppKit
 
-/// A small floating info card shown when you hover the pet. It explains the
-/// current mood and *why* (the same content as the right-click menu), styled as
-/// a rounded card and scaled by the menu-bar Scale setting. A solid light
-/// background with dark text keeps it legible over any window behind it. Purely
-/// informational: it never accepts mouse events or steals focus.
+/// A view that reports when the cursor enters/leaves it (so the popup can stay
+/// open while you move onto it).
+private final class TrackingView: NSView {
+    var onInside: ((Bool) -> Void)?
+    private var area: NSTrackingArea?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        let a = NSTrackingArea(rect: bounds,
+                               options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(a); area = a
+    }
+    override func mouseEntered(with e: NSEvent) { onInside?(true) }
+    override func mouseExited(with e: NSEvent) { onInside?(false) }
+}
+
+/// A small floating info card shown when you hover the pet — the current mood
+/// and *why* (same content as the right-click menu). Solid light card + dark
+/// text for legibility, scaled by the Scale setting. You can drag it to move it
+/// and click ✕ to dismiss it; it stays open while the cursor is over it.
 final class HoverInfoWindow: NSWindow {
-    private let card = NSView()
+    var onDismiss: (() -> Void)?
+    var onPopupHover: ((Bool) -> Void)?
+
+    private let card = TrackingView()
     private let stack = NSStackView()
+    private let closeButton = NSButton()
     private var padLeading: NSLayoutConstraint!
     private var padTrailing: NSLayoutConstraint!
     private var padTop: NSLayoutConstraint!
@@ -21,7 +41,7 @@ final class HoverInfoWindow: NSWindow {
         backgroundColor = .clear
         hasShadow = true
         level = .floating
-        ignoresMouseEvents = true
+        isMovableByWindowBackground = true            // drag to move
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         card.wantsLayer = true
@@ -30,27 +50,44 @@ final class HoverInfoWindow: NSWindow {
         card.layer?.borderWidth = 1
         card.layer?.borderColor = NSColor(calibratedWhite: 0.0, alpha: 0.12).cgColor
         card.layer?.masksToBounds = true
+        card.onInside = { [weak self] inside in self?.onPopupHover?(inside) }
         contentView = card
+
+        if let x = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close") {
+            closeButton.image = x; closeButton.imagePosition = .imageOnly
+        } else { closeButton.title = "✕" }
+        closeButton.isBordered = false
+        closeButton.contentTintColor = NSColor(calibratedWhite: 0.45, alpha: 1)
+        closeButton.target = self
+        closeButton.action = #selector(closeTapped)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(closeButton)
 
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
         padLeading = stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12)
-        padTrailing = card.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 12)
+        padTrailing = card.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 26)
         padTop = stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10)
         padBottom = card.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 10)
-        NSLayoutConstraint.activate([padLeading, padTrailing, padTop, padBottom])
+        NSLayoutConstraint.activate([
+            padLeading, padTrailing, padTop, padBottom,
+            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 6),
+            card.trailingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 6),
+        ])
     }
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    @objc private func closeTapped() { onDismiss?() }
+
     /// Rebuild the card content and resize to fit.
     func update(title: String, lines: [String], scale: CGFloat) {
         let s = max(0.6, min(scale, 3.0))
         let pad = 12 * s
-        padLeading.constant = pad; padTrailing.constant = pad
+        padLeading.constant = pad; padTrailing.constant = pad + 14 * s
         padTop.constant = pad * 0.85; padBottom.constant = pad * 0.85
         stack.spacing = 3 * s
         card.layer?.cornerRadius = 12 * s
@@ -76,7 +113,7 @@ final class HoverInfoWindow: NSWindow {
 
         stack.layoutSubtreeIfNeeded()
         let fit = stack.fittingSize
-        setContentSize(NSSize(width: ceil(fit.width + pad * 2),
+        setContentSize(NSSize(width: ceil(fit.width + pad * 2 + 14 * s),
                               height: ceil(fit.height + pad * 1.7)))
     }
 }

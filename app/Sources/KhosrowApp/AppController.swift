@@ -13,10 +13,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let pill = MoodPillView(frame: .zero)   // always-visible mood label beneath him
     private var hoverInfo: HoverInfoWindow? // the "why" popup shown on hover
     private var isHovering = false
+    private var hoverHideWork: DispatchWorkItem?
     private var notificationBubble: NotificationBubbleWindow?
+    private var pendingIdleNotify: DispatchWorkItem?
     private var previousState: PetState?
     private let badge = BadgeView(frame: .zero)   // unread count on the pet
     private var unread = 0
+    private let progressRing = ProgressRingView(frame: .zero)  // response-progress timer
+    private var turnStart: TimeInterval?
+    private var avgTurnDuration: TimeInterval = 20
+    private var ringTimer: Timer?
     private var controller: PetController!
 
     private static let timeFormatter: DateFormatter = {
@@ -59,6 +65,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         container.addSubview(petView)
         container.addSubview(pill)
         configureBadge()
+        progressRing.isHidden = true
+        container.addSubview(progressRing)
         window = PetWindow(contentSize: containerSize(),
                            floatOnTop: prefs.floatOnTop,
                            showOnAllSpaces: prefs.showOnAllSpaces)
@@ -112,7 +120,59 @@ final class AppController: NSObject, NSApplicationDelegate {
         container.frame = NSRect(origin: .zero, size: containerSize())
         petView.frame = NSRect(x: 0, y: pillBandHeight(), width: sprite.width, height: sprite.height)
         layoutBadge()
+        layoutProgressRing()
         updateMood()
+    }
+
+    private func layoutProgressRing() {
+        let d = max(22, 27 * CGFloat(prefs.scale))
+        let sprite = spriteSize()
+        // top-left of the sprite (opposite the unread badge)
+        progressRing.frame = NSRect(x: 1, y: pillBandHeight() + sprite.height - d, width: d, height: d)
+        progressRing.uiScale = CGFloat(prefs.scale)
+    }
+
+    // MARK: Response-progress ring (estimate of how far along Claude's reply is)
+
+    private func handleTurnProgress(to state: PetState) {
+        let active: Set<PetState> = [.writing, .reading, .searching, .editing, .runningCommand, .attentive]
+        if active.contains(state) {
+            if turnStart == nil { startTurn() }
+        } else if turnStart != nil {
+            endTurn()
+        }
+    }
+
+    private func startTurn() {
+        turnStart = ProcessInfo.processInfo.systemUptime
+        progressRing.isHidden = false
+        layoutProgressRing()
+        ringTimer?.invalidate()
+        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.tickRing() }
+        RunLoop.main.add(t, forMode: .common)
+        ringTimer = t
+        tickRing()
+    }
+
+    private func tickRing() {
+        guard let start = turnStart else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+        let tau = max(4, avgTurnDuration)
+        // Asymptotic estimate: ~63% at the average length, never 100% until done.
+        progressRing.progress = CGFloat(1 - exp(-elapsed / tau))
+        progressRing.seconds = Int(elapsed)
+    }
+
+    private func endTurn() {
+        guard let start = turnStart else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+        if elapsed > 2 { avgTurnDuration = avgTurnDuration * 0.7 + elapsed * 0.3 }   // rolling average
+        ringTimer?.invalidate(); ringTimer = nil
+        turnStart = nil
+        progressRing.progress = 1                         // snap full, then fade out
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            if self?.turnStart == nil { self?.progressRing.isHidden = true }
+        }
     }
 
     private func applyScale() {
@@ -149,16 +209,49 @@ final class AppController: NSObject, NSApplicationDelegate {
         if isHovering { refreshHoverInfo() }
         if state != previousState {
             maybeNotify(from: previousState, to: state)   // notify when he stops working
+            handleTurnProgress(to: state)                 // update the response-progress ring
             previousState = state
         }
     }
 
     private func setHover(_ inside: Bool) {
-        isHovering = inside
-        guard inside else { hoverInfo?.orderOut(nil); return }
-        if hoverInfo == nil { hoverInfo = HoverInfoWindow() }
+        if inside {
+            hoverHideWork?.cancel(); hoverHideWork = nil
+            showHoverInfo()
+        } else {
+            scheduleHoverHide()
+        }
+    }
+
+    private func showHoverInfo() {
+        // Never stack on top of a visible notification bubble.
+        if notificationBubble?.isVisible == true { return }
+        if hoverInfo == nil {
+            let h = HoverInfoWindow()
+            h.onDismiss = { [weak self] in self?.hideHoverInfo() }
+            h.onPopupHover = { [weak self] inside in
+                if inside { self?.hoverHideWork?.cancel(); self?.hoverHideWork = nil }
+                else { self?.scheduleHoverHide() }
+            }
+            hoverInfo = h
+        }
+        isHovering = true
         refreshHoverInfo()
         hoverInfo?.order(.above, relativeTo: window.windowNumber)
+    }
+
+    /// Hide after a short grace period, so moving the cursor onto the popup
+    /// (to drag or dismiss it) doesn't make it vanish.
+    private func scheduleHoverHide() {
+        hoverHideWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.hideHoverInfo() }
+        hoverHideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func hideHoverInfo() {
+        isHovering = false
+        hoverInfo?.orderOut(nil)
     }
 
     private func refreshHoverInfo() {
@@ -188,6 +281,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Show a notification bubble above the pet.
     private func notify(title: String, body: String, startReply: Bool = false) {
+        hideHoverInfo()                                // never overlap the hover popup
         if notificationBubble == nil {
             let b = NotificationBubbleWindow()
             b.onDismiss = { [weak self] in self?.dismissNotification() }
@@ -208,25 +302,38 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func dismissNotification() { notificationBubble?.orderOut(nil) }
 
-    /// Fire a "Claude finished / needs you" notification when he stops working.
+    /// Fire a "Claude finished / needs you" notification when he stops working —
+    /// and never leave a stale one up once he resumes.
     private func maybeNotify(from old: PetState?, to new: PetState) {
         guard prefs.followBridge else { return }        // only for live, automatic transitions
         let active: Set<PetState> = [.writing, .reading, .searching, .editing, .runningCommand, .attentive]
-        guard let old, active.contains(old) else { return }
+        // Resumed working → cancel any pending "waiting" and drop a stale bubble.
+        if active.contains(new) {
+            pendingIdleNotify?.cancel(); pendingIdleNotify = nil
+            dismissNotification()
+            return
+        }
+        guard let old, active.contains(old) else { return }   // only when he STOPS working
         let ctx = detailContext()
         switch new {
         case .waitingForPermission:
-            notify(title: "Khosrow needs you", body: "Claude Code is waiting for your approval.")
-            bumpUnread()
+            notify(title: "Khosrow needs you", body: "Claude Code is waiting for your approval."); bumpUnread()
         case .success:
-            notify(title: "Task complete 🎉", body: ctx.isEmpty ? "Claude Code finished successfully." : ctx)
-            bumpUnread()
+            notify(title: "Task complete 🎉", body: ctx.isEmpty ? "Claude Code finished successfully." : ctx); bumpUnread()
         case .failure:
-            notify(title: "Something failed", body: ctx.isEmpty ? "A tool or task just failed." : ctx)
-            bumpUnread()
+            notify(title: "Something failed", body: ctx.isEmpty ? "A tool or task just failed." : ctx); bumpUnread()
         case .idle:
-            notify(title: "Khosrow is waiting for you", body: ctx.isEmpty ? "Claude Code paused — reply to keep going." : ctx)
-            bumpUnread()
+            // Debounce: only announce "waiting" if he STAYS idle ~10s, so a brief
+            // think-pause mid-response never triggers a false "waiting for you".
+            pendingIdleNotify?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.controller.state == .idle else { return }
+                self.notify(title: "Khosrow is waiting for you",
+                            body: ctx.isEmpty ? "Claude Code paused — reply to keep going." : ctx)
+                self.bumpUnread()
+            }
+            pendingIdleNotify = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
         default: break
         }
     }
