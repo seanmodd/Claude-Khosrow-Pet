@@ -67,7 +67,7 @@ final class PetController {
         .waitingForPermission: "waiting",
         .writing: "writing",
         .runningCommand: "running",
-        // .praying is added when the Praying mood ships (see M3).
+        .praying: "praying",
     ]
 
     /// Load the bundled per-state frame sequences and their playback cadence.

@@ -211,6 +211,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         .idle: "🧍 idle", .attentive: "🙌 attentive", .writing: "📝 writing",
         .reading: "📖 reading", .searching: "🔎 searching", .editing: "✍️ editing",
         .runningCommand: "🏃 running", .waitingForPermission: "✋ waiting",
+        .praying: "🙏 praying",
         .success: "🎉 success", .failure: "🙇 failure", .sleeping: "😴 sleeping",
     ]
     private func pillText(_ s: PetState) -> String { Self.pillLabels[s] ?? s.rawValue }
@@ -682,7 +683,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         .idle: "resting", .attentive: "listening", .writing: "writing a response",
         .reading: "reading a file", .searching: "searching", .editing: "editing",
         .runningCommand: "running a command", .waitingForPermission: "waiting for permission",
-        .success: "celebrating a win", .failure: "recovering from an error", .sleeping: "sleeping",
+        .praying: "praying", .success: "celebrating a win",
+        .failure: "recovering from an error", .sleeping: "sleeping",
     ]
     private func moodVerb(_ s: PetState) -> String { Self.moodVerbs[s] ?? s.rawValue }
 
@@ -750,6 +752,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             .editing: "Claude Code is editing a file.",
             .runningCommand: "Claude Code is running a shell command.",
             .waitingForPermission: "Claude Code is waiting for you to approve something.",
+            .praying: "Reflecting — a manual/optional mood with no automatic Claude Code trigger.",
             .success: "A task just finished successfully.",
             .failure: "A tool or task just failed.",
             .sleeping: "The Claude Code session ended — he's asleep.",

@@ -83,6 +83,34 @@ final class StateMappingTests: XCTestCase {
         XCTAssertNil(PetState(loose: "banana"))
     }
 
+    /// Praying is a real, parseable, first-class state.
+    func testPrayingStateParsesAndEnumerates() {
+        XCTAssertEqual(PetState(loose: "praying"), .praying)
+        XCTAssertEqual(PetState(loose: "pray"), .praying)
+        XCTAssertEqual(PetState(loose: "prayer"), .praying)
+        XCTAssertEqual(PetState(loose: "reflecting"), .praying)
+        XCTAssertEqual(PetState(rawValue: "praying"), .praying)
+        XCTAssertTrue(PetState.allCases.contains(.praying),
+                      "praying must appear in the built-in mood collection")
+    }
+
+    /// Per spec, Praying has NO invented automatic trigger: no lifecycle event,
+    /// for any category/outcome, may resolve to `.praying`. It must never appear
+    /// as a fallthrough from an incomplete switch either.
+    func testPrayingHasNoAutomaticTrigger() {
+        let cats: [ToolCategory?] = ToolCategory.allCases.map { $0 } + [nil]
+        let outcomes: [Bool?] = [true, false, nil]
+        for event in HookEvent.allCases {
+            for cat in cats {
+                for ok in outcomes {
+                    XCTAssertNotEqual(StateMapper.map(event: event, category: cat, success: ok),
+                                      .praying,
+                                      "\(event) unexpectedly mapped to praying")
+                }
+            }
+        }
+    }
+
     func testEveryStateResolvesToAClipInManifest() throws {
         let m = try KhosrowResources.loadRuntimeManifest()
         for state in PetState.allCases {

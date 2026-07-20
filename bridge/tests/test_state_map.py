@@ -81,6 +81,20 @@ class StateMapTests(unittest.TestCase):
     def test_unknown_event_stays_neutral(self):
         self.assertEqual(core.map_state("TotallyUnknown"), core.DEFAULT_STATE)
 
+    def test_praying_is_a_valid_state_without_a_trigger(self):
+        # Praying is part of the closed vocabulary (a first-class built-in mood)…
+        self.assertIn("praying", core.STATES)
+        # …but no lifecycle event ever derives it automatically (no invented
+        # trigger — it is manual/rule-only).
+        events = ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse",
+                  "PostToolUse", "PostToolUseFailure", "PermissionRequest",
+                  "Notification", "Stop", "StopFailure", "SubagentStart",
+                  "SubagentStop"]
+        for e in events:
+            for cat in core.CATEGORIES + [None]:
+                for s in (True, False, None):
+                    self.assertNotEqual(core.map_state(e, cat, s), "praying")
+
     def test_all_states_are_valid(self):
         # Every event we support must map into the closed STATES set.
         events = ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse",

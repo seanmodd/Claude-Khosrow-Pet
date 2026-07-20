@@ -181,6 +181,13 @@
       "dim": false,
       "rationale": "Waiting for you \u2014 Gemini illustrated pose (gemini-waiting, checking his wrist); falls back to the 'present' clip."
     },
+    "praying": {
+      "state": "praying",
+      "clip": "idle_guard",
+      "fpsOverride": null,
+      "dim": false,
+      "rationale": "Praying / reflecting \u2014 a first-class built-in mood with its own Gemini illustrated pose (gemini-praying, hands raised in reverence). It has NO automatic hook trigger by default; it is shown only when manually previewed or by a user-created rule. Falls back to the calm idle_guard clip if the still is absent."
+    },
     "success": {
       "state": "success",
       "clip": "cheer",

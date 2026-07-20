@@ -11,6 +11,7 @@ public enum PetState: String, CaseIterable, Codable, Equatable {
     case editing
     case runningCommand
     case waitingForPermission
+    case praying
     case success
     case failure
     case sleeping
@@ -26,6 +27,7 @@ public enum PetState: String, CaseIterable, Codable, Equatable {
         case "edit", "patch", "modify": self = .editing
         case "write", "writing", "compose", "composing", "responding", "thinking", "replying": self = .writing
         case "permission", "waiting", "approval", "confirm": self = .waitingForPermission
+        case "pray", "prayer", "praying", "reflect", "reflecting", "contemplate", "contemplating", "meditate": self = .praying
         case "ok", "done", "passed", "green": self = .success
         case "error", "failed", "fail", "red": self = .failure
         case "sleep", "asleep", "idlelong": self = .sleeping

@@ -58,6 +58,7 @@ STATES = [
     ("editing",              "ready",       None,  False, "Handling the sword = actively editing files."),
     ("runningCommand",       "run_left",    None,  False, "Executing a command — Gemini illustrated pose (gemini-running, on horseback at a gallop); falls back to the run_left clip."),
     ("waitingForPermission", "present",     9,     False, "Waiting for you — Gemini illustrated pose (gemini-waiting, checking his wrist); falls back to the 'present' clip."),
+    ("praying",              "idle_guard",  None,  False, "Praying / reflecting — a first-class built-in mood with its own Gemini illustrated pose (gemini-praying, hands raised in reverence). It has NO automatic hook trigger by default; it is shown only when manually previewed or by a user-created rule. Falls back to the calm idle_guard clip if the still is absent."),
     ("success",              "cheer",       None,  False, "Raises his sword in triumph: bundled hand-drawn khosrow-success-* frames (falls back to the cheer clip if absent)."),
     ("failure",              "bow",         None,  False, "Head-down bow reads as apology/defeat on failure."),
     ("sleeping",             "idle",        4,     False, "Sleeps in a hand-drawn bed: bundled khosrow-sleeping-* frames (falls back to the idle clip if absent)."),

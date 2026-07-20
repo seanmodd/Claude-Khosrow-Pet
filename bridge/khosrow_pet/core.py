@@ -13,10 +13,14 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
-# The complete, closed set of states the pet understands.
+# The complete, closed set of states the pet understands. `praying` is a
+# first-class built-in mood with no automatic hook trigger — it is a valid state
+# the app can be told to show (manual preview or a user-created rule), so it is
+# part of the vocabulary even though map_state() never derives it on its own.
 STATES = [
     "idle", "attentive", "writing", "reading", "searching", "editing",
-    "runningCommand", "waitingForPermission", "success", "failure", "sleeping",
+    "runningCommand", "waitingForPermission", "praying", "success", "failure",
+    "sleeping",
 ]
 
 # Coarse tool categories (a tool's *arguments* are never retained).
