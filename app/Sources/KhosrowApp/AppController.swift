@@ -13,7 +13,15 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let pill = MoodPillView(frame: .zero)   // always-visible mood label beneath him
     private var hoverInfo: HoverInfoWindow? // the "why" popup shown on hover
     private var isHovering = false
+    private var notificationBubble: NotificationBubbleWindow?
+    private var previousState: PetState?
+    private let badge = NSTextField(labelWithString: "")   // unread count on the pet
+    private var unread = 0
     private var controller: PetController!
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
+    }()
     private var skins: [Skin] = []
     private var currentSkinID = "khosrow"
     private let bridge = BridgeClient()
@@ -50,6 +58,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         container = NSView(frame: NSRect(origin: .zero, size: containerSize()))
         container.addSubview(petView)
         container.addSubview(pill)
+        configureBadge()
         window = PetWindow(contentSize: containerSize(),
                            floatOnTop: prefs.floatOnTop,
                            showOnAllSpaces: prefs.showOnAllSpaces)
@@ -102,6 +111,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let sprite = spriteSize()
         container.frame = NSRect(origin: .zero, size: containerSize())
         petView.frame = NSRect(x: 0, y: pillBandHeight(), width: sprite.width, height: sprite.height)
+        layoutBadge()
         updateMood()
     }
 
@@ -130,12 +140,17 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Refresh the pill's label + position for the current mood, and the popup if open.
     private func updateMood() {
-        pill.set(text: pillText(controller.state), scale: CGFloat(prefs.scale))
+        let state = controller.state
+        pill.set(text: pillText(state), scale: CGFloat(prefs.scale))
         let sz = pill.pillSize
         let band = pillBandHeight()
         pill.frame = NSRect(x: (spriteSize().width - sz.width) / 2,
                             y: (band - sz.height) / 2, width: sz.width, height: sz.height)
         if isHovering { refreshHoverInfo() }
+        if state != previousState {
+            maybeNotify(from: previousState, to: state)   // notify when he stops working
+            previousState = state
+        }
     }
 
     private func setHover(_ inside: Bool) {
@@ -152,16 +167,177 @@ final class AppController: NSObject, NSApplicationDelegate {
         positionHoverInfo()
     }
 
-    /// Sit the popup just above the pet, centered, kept on-screen.
     private func positionHoverInfo() {
-        guard let hoverInfo, let screen = window.screen ?? NSScreen.main else { return }
-        let pet = window.frame, size = hoverInfo.frame.size, vf = screen.visibleFrame
+        guard let hoverInfo else { return }
+        positionAbovePet(hoverInfo)
+    }
+
+    /// Sit a companion window just above the pet, centered, kept on-screen.
+    private func positionAbovePet(_ win: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let pet = window.frame, size = win.frame.size, vf = screen.visibleFrame
         var y = pet.maxY + 8 * CGFloat(prefs.scale)
         if y + size.height > vf.maxY { y = pet.minY - size.height - 8 }   // flip below if needed
         var x = pet.midX - size.width / 2
         x = min(max(x, vf.minX + 4), vf.maxX - size.width - 4)
         y = min(max(y, vf.minY + 4), vf.maxY - size.height - 4)
-        hoverInfo.setFrameOrigin(NSPoint(x: x, y: y))
+        win.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // MARK: Notifications + reply (respond to the session from the pet)
+
+    /// Show a notification bubble above the pet.
+    private func notify(title: String, body: String, startReply: Bool = false) {
+        if notificationBubble == nil {
+            let b = NotificationBubbleWindow()
+            b.onDismiss = { [weak self] in self?.dismissNotification() }
+            b.onReply = { [weak self] text in self?.deliverReply(text); self?.dismissNotification() }
+            b.onOpenSession = { [weak self] in self?.openInClaudeDesktop() }
+            notificationBubble = b
+        }
+        notificationBubble?.present(title: title,
+                                    timestamp: Self.timeFormatter.string(from: Date()),
+                                    body: body, canReply: currentSessionInfo() != nil,
+                                    scale: CGFloat(prefs.scale))
+        positionAbovePet(notificationBubble!)
+        notificationBubble?.orderFront(nil)
+        setUnread(0)                                   // seeing it clears the badge
+        if startReply { notificationBubble?.beginReply() }
+    }
+
+    private func dismissNotification() { notificationBubble?.orderOut(nil) }
+
+    /// Fire a "Claude finished / needs you" notification when he stops working.
+    private func maybeNotify(from old: PetState?, to new: PetState) {
+        guard prefs.followBridge else { return }        // only for live, automatic transitions
+        let active: Set<PetState> = [.writing, .reading, .searching, .editing, .runningCommand, .attentive]
+        guard let old, active.contains(old) else { return }
+        let ctx = detailContext()
+        switch new {
+        case .waitingForPermission:
+            notify(title: "Khosrow needs you", body: "Claude Code is waiting for your approval.")
+            bumpUnread()
+        case .success:
+            notify(title: "Task complete 🎉", body: ctx.isEmpty ? "Claude Code finished successfully." : ctx)
+            bumpUnread()
+        case .failure:
+            notify(title: "Something failed", body: ctx.isEmpty ? "A tool or task just failed." : ctx)
+            bumpUnread()
+        case .idle:
+            notify(title: "Khosrow is waiting for you", body: ctx.isEmpty ? "Claude Code paused — reply to keep going." : ctx)
+            bumpUnread()
+        default: break
+        }
+    }
+
+    /// A short "what just happened" line for the notification body.
+    private func detailContext() -> String {
+        guard let s = previousState else { return "" }
+        var t = "Just \(moodVerb(s))"
+        if let d = lastBridge?.detail, !d.isEmpty { t += " — \(d)" }
+        return t + "."
+    }
+
+    @objc private func openReply() {
+        let ctx = detailContext()
+        notify(title: "Reply to Claude",
+               body: ctx.isEmpty ? "Type a message to send to your session." : ctx,
+               startReply: true)
+    }
+
+    // MARK: Badge
+
+    private func configureBadge() {
+        badge.isBezeled = false; badge.isEditable = false; badge.drawsBackground = false
+        badge.alignment = .center; badge.textColor = .white
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = NSColor.systemRed.cgColor
+        badge.layer?.masksToBounds = true
+        badge.isHidden = true
+        container.addSubview(badge)
+    }
+
+    private func layoutBadge() {
+        let d = max(16, 18 * CGFloat(prefs.scale))
+        let sprite = spriteSize()
+        badge.frame = NSRect(x: sprite.width - d, y: pillBandHeight() + sprite.height - d, width: d, height: d)
+        badge.layer?.cornerRadius = d / 2
+        badge.font = .boldSystemFont(ofSize: 11 * CGFloat(prefs.scale))
+    }
+
+    private func bumpUnread() { setUnread(unread + 1) }
+    private func setUnread(_ n: Int) {
+        unread = max(0, n)
+        badge.isHidden = unread == 0
+        if unread > 0 { badge.stringValue = "\(unread)"; layoutBadge() }
+    }
+
+    // MARK: Reply delivery
+
+    /// The session id + cwd to reply into (assigned session, else the live one).
+    private func currentSessionInfo() -> (id: String, cwd: String)? {
+        let id: String?
+        if prefs.watchMode, prefs.watchSession != "auto", !prefs.watchSession.isEmpty {
+            id = prefs.watchSession
+        } else {
+            id = lastBridge?.session
+        }
+        guard let sid = id, !sid.isEmpty else { return nil }
+        return (sid, sessionCwd(for: sid) ?? FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
+    /// Read the `cwd` field from the head of a session transcript.
+    private func sessionCwd(for id: String) -> String? {
+        let projects = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        guard let dirs = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return nil }
+        for dir in dirs {
+            let f = dir.appendingPathComponent("\(id).jsonl")
+            guard FileManager.default.fileExists(atPath: f.path),
+                  let handle = try? FileHandle(forReadingFrom: f) else { continue }
+            defer { try? handle.close() }
+            let head = handle.readData(ofLength: 16384)
+            for line in String(decoding: head, as: UTF8.self).split(separator: "\n") {
+                if let d = line.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                   let cwd = obj["cwd"] as? String, !cwd.isEmpty { return cwd }
+            }
+        }
+        return nil
+    }
+
+    /// Deliver the user's reply to the session by resuming it in a Terminal
+    /// (there is no supported way to inject into a live Desktop session).
+    private func deliverReply(_ text: String) {
+        guard let info = currentSessionInfo() else {
+            notify(title: "No session to reply to", body: "Turn on Watch mode or assign a session first.")
+            return
+        }
+        let claudePath = ["\(NSHomeDirectory())/.local/bin/claude",
+                          "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) } ?? "claude"
+        func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let script = """
+        #!/bin/bash
+        cd \(q(info.cwd)) 2>/dev/null || cd "$HOME"
+        clear
+        echo "→ Khosrow is delivering your reply to Claude Code…"
+        echo
+        exec \(q(claudePath)) --resume \(q(info.id)) \(q(text))
+        """
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("khosrow-reply-\(UUID().uuidString).command")
+        do {
+            try script.write(to: tmp, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp.path)
+            NSWorkspace.shared.open(tmp)
+        } catch {
+            NSLog("Khosrow: reply failed: \(error)")
+        }
+    }
+
+    /// Focus Claude Desktop (best-effort; the scheme can't target a Code session).
+    private func openInClaudeDesktop() {
+        if let url = URL(string: "claude://claude.ai/code") { NSWorkspace.shared.open(url) }
     }
 
     // MARK: Dragging
@@ -226,6 +402,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         sessionItem.submenu = buildSessionSubmenu()
         sessionItem.toolTip = "Assign which Claude Code session Khosrow reacts to (Automatic = the newest active one)."
         menu.addItem(sessionItem)
+
+        let replyItem = NSMenuItem(title: "💬 Reply to Claude…", action: #selector(openReply), keyEquivalent: "")
+        replyItem.target = self
+        menu.addItem(replyItem)
 
         menu.popUp(positioning: nil,
                    at: petView.convert(event.locationInWindow, from: nil),
@@ -431,6 +611,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         sessionItem.submenu = buildSessionSubmenu()
         sessionItem.toolTip = "Which Claude Code session Khosrow reacts to (or Automatic = the newest active one)."
         menu.addItem(sessionItem)
+
+        let replyItem = makeItem("💬 Reply to Claude…", #selector(openReply), "r")
+        replyItem.toolTip = "Type a message and send it to your session (opens it via claude --resume in Terminal)."
+        menu.addItem(replyItem)
         menu.addItem(.separator())
 
         let clickThrough = makeItem("Click-through", #selector(toggleClickThrough), "")

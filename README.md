@@ -86,6 +86,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
 - 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* (same info on **right‑click**, plus controls)
+- 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** sends a message straight to your session, or **Open in Claude** focuses the app
 - **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**
 - **Menu‑bar control center** (the Faravahar glyph) + an **Animation Test Console**
 - Runs **completely standalone**; **100% native AppKit** — no Electron, no web view, never touches Claude Desktop
@@ -97,6 +98,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - The optional double‑click `.app` is **unsigned** — first launch needs right‑click → **Open**; no notarization, App Store, or sandbox
 - **Detail mode is off by default** — turning it on surfaces real content, so mind screen‑shares
 - **Watch mode is best‑effort** — it reads Claude Code's transcript format, which can change between releases
+- **Replies can't be injected into a *live* Claude Desktop session** (Claude has no API for that) — a reply is delivered by resuming the same session with `claude --resume` in a Terminal you can watch
 - No sound; doesn't auto‑launch at login (add it yourself if you'd like)
 
 </td>
