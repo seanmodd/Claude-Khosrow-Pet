@@ -11,6 +11,7 @@ final class NotificationBubbleWindow: NSWindow {
     var onDismiss: (() -> Void)?
     var onReply: ((String) -> Void)?
     var onOpenSession: (() -> Void)?
+    var onSuggest: (() -> Void)?
 
     private let card = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -18,9 +19,11 @@ final class NotificationBubbleWindow: NSWindow {
     private let bodyLabel = NSTextField(wrappingLabelWithString: "")
     private let dismissButton = NSButton()
     private let replyButton = NSButton()
+    private let suggestButton = NSButton()
     private let openButton = NSButton()
     private let replyField = NSTextField()
     private let sendButton = NSButton()
+    private let spinner = NSProgressIndicator()
     private let column = NSStackView()
     private let actionRow = NSStackView()
     private let replyRow = NSStackView()
@@ -53,8 +56,14 @@ final class NotificationBubbleWindow: NSWindow {
 
         styleIcon(dismissButton, symbol: "xmark", fallback: "✕", action: #selector(dismissTapped))
         styleText(replyButton, title: "↩ Reply", action: #selector(replyTapped))
+        styleText(suggestButton, title: "💡 Suggest", action: #selector(suggestTapped))
         styleText(openButton, title: "Open in Claude", action: #selector(openTapped))
         styleText(sendButton, title: "Send", action: #selector(sendTapped))
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
 
         replyField.placeholderString = "Reply to Claude…"
         replyField.isBezeled = true
@@ -72,10 +81,12 @@ final class NotificationBubbleWindow: NSWindow {
         actionRow.orientation = .horizontal
         actionRow.spacing = 8
         actionRow.addArrangedSubview(replyButton)
+        actionRow.addArrangedSubview(suggestButton)
         actionRow.addArrangedSubview(openButton)
 
         replyRow.orientation = .horizontal
         replyRow.spacing = 6
+        replyRow.addArrangedSubview(spinner)
         replyRow.addArrangedSubview(replyField)
         replyRow.addArrangedSubview(sendButton)
         replyRow.isHidden = true
@@ -120,6 +131,13 @@ final class NotificationBubbleWindow: NSWindow {
         restIcons(scale: s)
 
         replyRow.isHidden = true
+        actionRow.isHidden = false
+        replyField.isEnabled = true; sendButton.isEnabled = true
+        replyField.placeholderString = "Reply to Claude…"
+        resize()
+    }
+
+    private func resize() {
         column.layoutSubtreeIfNeeded()
         let fit = column.fittingSize
         setContentSize(NSSize(width: ceil(fit.width + 28), height: ceil(fit.height + 24)))
@@ -132,17 +150,50 @@ final class NotificationBubbleWindow: NSWindow {
     private func showReplyField() {
         replyRow.isHidden = false
         actionRow.isHidden = true
-        column.layoutSubtreeIfNeeded()
-        let fit = column.fittingSize
-        setContentSize(NSSize(width: ceil(fit.width + 28), height: ceil(fit.height + 24)))
+        resize()
         makeKeyAndOrderFront(nil)
         makeFirstResponder(replyField)
+    }
+
+    // MARK: Suggestion (best-reply generation)
+
+    /// Show the reply field with a spinner while the app generates a suggestion.
+    func beginSuggesting() {
+        replyRow.isHidden = false
+        actionRow.isHidden = true
+        replyField.isEnabled = false
+        replyField.placeholderString = "Finding the best reply…"
+        sendButton.isEnabled = false
+        spinner.startAnimation(nil)
+        resize()
+        orderFront(nil)
+    }
+
+    /// Fill the reply field with the generated suggestion (editable before Send).
+    func setSuggestion(_ text: String) {
+        spinner.stopAnimation(nil)
+        replyField.isEnabled = true
+        sendButton.isEnabled = true
+        replyField.stringValue = text
+        resize()
+        makeKeyAndOrderFront(nil)
+        makeFirstResponder(replyField)
+        replyField.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+    }
+
+    func suggestionFailed() {
+        spinner.stopAnimation(nil)
+        replyField.isEnabled = true
+        sendButton.isEnabled = true
+        replyField.placeholderString = "Couldn't suggest — type your reply…"
+        resize()
     }
 
     // MARK: Actions
 
     @objc private func dismissTapped() { onDismiss?() }
     @objc private func replyTapped() { showReplyField() }
+    @objc private func suggestTapped() { onSuggest?() }
     @objc private func openTapped() { onOpenSession?() }
     @objc private func sendTapped() {
         let text = replyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -15,7 +15,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var isHovering = false
     private var notificationBubble: NotificationBubbleWindow?
     private var previousState: PetState?
-    private let badge = NSTextField(labelWithString: "")   // unread count on the pet
+    private let badge = BadgeView(frame: .zero)   // unread count on the pet
     private var unread = 0
     private var controller: PetController!
 
@@ -193,6 +193,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             b.onDismiss = { [weak self] in self?.dismissNotification() }
             b.onReply = { [weak self] text in self?.deliverReply(text); self?.dismissNotification() }
             b.onOpenSession = { [weak self] in self?.openInClaudeDesktop() }
+            b.onSuggest = { [weak self] in self?.generateSuggestion() }
             notificationBubble = b
         }
         notificationBubble?.present(title: title,
@@ -248,11 +249,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: Badge
 
     private func configureBadge() {
-        badge.isBezeled = false; badge.isEditable = false; badge.drawsBackground = false
-        badge.alignment = .center; badge.textColor = .white
-        badge.wantsLayer = true
-        badge.layer?.backgroundColor = NSColor.systemRed.cgColor
-        badge.layer?.masksToBounds = true
         badge.isHidden = true
         container.addSubview(badge)
     }
@@ -261,15 +257,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         let d = max(16, 18 * CGFloat(prefs.scale))
         let sprite = spriteSize()
         badge.frame = NSRect(x: sprite.width - d, y: pillBandHeight() + sprite.height - d, width: d, height: d)
-        badge.layer?.cornerRadius = d / 2
-        badge.font = .boldSystemFont(ofSize: 11 * CGFloat(prefs.scale))
+        badge.uiScale = CGFloat(prefs.scale)
     }
 
     private func bumpUnread() { setUnread(unread + 1) }
     private func setUnread(_ n: Int) {
         unread = max(0, n)
+        badge.count = unread
         badge.isHidden = unread == 0
-        if unread > 0 { badge.stringValue = "\(unread)"; layoutBadge() }
+        if unread > 0 { layoutBadge() }
     }
 
     // MARK: Reply delivery
@@ -286,23 +282,113 @@ final class AppController: NSObject, NSApplicationDelegate {
         return (sid, sessionCwd(for: sid) ?? FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
-    /// Read the `cwd` field from the head of a session transcript.
-    private func sessionCwd(for id: String) -> String? {
+    /// The transcript file for a session id (filename is the id).
+    private func transcriptURL(for id: String) -> URL? {
         let projects = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
         guard let dirs = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return nil }
         for dir in dirs {
             let f = dir.appendingPathComponent("\(id).jsonl")
-            guard FileManager.default.fileExists(atPath: f.path),
-                  let handle = try? FileHandle(forReadingFrom: f) else { continue }
-            defer { try? handle.close() }
-            let head = handle.readData(ofLength: 16384)
-            for line in String(decoding: head, as: UTF8.self).split(separator: "\n") {
-                if let d = line.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                   let cwd = obj["cwd"] as? String, !cwd.isEmpty { return cwd }
-            }
+            if FileManager.default.fileExists(atPath: f.path) { return f }
         }
         return nil
+    }
+
+    /// Read the `cwd` field from the head of a session transcript.
+    private func sessionCwd(for id: String) -> String? {
+        guard let f = transcriptURL(for: id), let handle = try? FileHandle(forReadingFrom: f) else { return nil }
+        defer { try? handle.close() }
+        let head = handle.readData(ofLength: 16384)
+        for line in String(decoding: head, as: UTF8.self).split(separator: "\n") {
+            if let d = line.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+               let cwd = obj["cwd"] as? String, !cwd.isEmpty { return cwd }
+        }
+        return nil
+    }
+
+    /// The last assistant *text* message in a session (what Claude just said),
+    /// capped to a reasonable length — the context for a suggested reply.
+    private func lastAssistantMessage(for id: String) -> String? {
+        guard let f = transcriptURL(for: id), let handle = try? FileHandle(forReadingFrom: f) else { return nil }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: end > 131_072 ? end - 131_072 : 0)
+        let data = handle.readDataToEndOfFile()
+        var last: String?
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            guard let d = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  obj["type"] as? String == "assistant",
+                  let msg = obj["message"] as? [String: Any],
+                  let content = msg["content"] as? [[String: Any]] else { continue }
+            let texts = content.compactMap { blk -> String? in
+                (blk["type"] as? String) == "text" ? (blk["text"] as? String) : nil
+            }
+            let joined = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { last = joined }
+        }
+        guard let last else { return nil }
+        return last.count > 4000 ? String(last.suffix(4000)) : last
+    }
+
+    private func claudeExecutable() -> String {
+        ["\(NSHomeDirectory())/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) } ?? "claude"
+    }
+
+    // MARK: Suggested reply (asks Claude for the best next message)
+
+    /// Generate the single best suggested reply to Claude's last message and
+    /// prefill the reply field with it. Runs `claude -p` (tools disabled) off-main.
+    private func generateSuggestion() {
+        notificationBubble?.beginSuggesting()
+        guard let info = currentSessionInfo() else { notificationBubble?.suggestionFailed(); return }
+        let context = lastAssistantMessage(for: info.id) ?? ""
+        let meta = """
+        You are helping a software developer decide how to reply to their AI pair-programmer (Claude Code) mid-session. Here is Claude's most recent message to the developer:
+
+        \"\"\"
+        \(context.isEmpty ? "(Claude is waiting for the developer's next instruction.)" : context)
+        \"\"\"
+
+        Write the single best next message the developer should send to keep the work moving productively — approving, redirecting, answering a question, or giving the next instruction as appropriate. Be specific, natural, and concise (1–3 sentences). Output ONLY the message text the developer would send: no preamble, no quotes, no explanation.
+        """
+        let claude = claudeExecutable()
+        let cwd = info.cwd
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let out = AppController.runClaudePrint(claude: claude, prompt: meta, cwd: cwd)
+            let text = (out ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.async {
+                if text.isEmpty { self?.notificationBubble?.suggestionFailed() }
+                else { self?.notificationBubble?.setSuggestion(text) }
+            }
+        }
+    }
+
+    /// Run `claude -p` with tools disabled, prompt on stdin, with a watchdog.
+    private static func runClaudePrint(claude: String, prompt: String, cwd: String) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: claude)
+        proc.arguments = ["-p", "--tools", ""]          // no tools -> pure text generation
+        proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        // Never let the suggestion call trip the "nested Claude Code session" guard.
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "CLAUDECODE")
+        env.removeValue(forKey: "CLAUDE_CODE_ENTRYPOINT")
+        proc.environment = env
+        let outPipe = Pipe(), inPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = FileHandle.nullDevice
+        proc.standardInput = inPipe
+        do { try proc.run() } catch { return nil }
+        inPipe.fileHandleForWriting.write(Data(prompt.utf8))
+        try? inPipe.fileHandleForWriting.close()
+        let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 45, execute: watchdog)
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        watchdog.cancel()
+        return String(data: data, encoding: .utf8)
     }
 
     /// Deliver the user's reply to the session by resuming it in a Terminal
@@ -318,6 +404,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let script = """
         #!/bin/bash
+        unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
         cd \(q(info.cwd)) 2>/dev/null || cd "$HOME"
         clear
         echo "→ Khosrow is delivering your reply to Claude Code…"
