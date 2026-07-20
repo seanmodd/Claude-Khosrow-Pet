@@ -100,6 +100,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - **Detail mode is off by default** — turning it on surfaces real content, so mind screen‑shares
 - **Watch mode is best‑effort** — it reads Claude Code's transcript format, which can change between releases
 - **Replies can't be injected into a *live* Claude Desktop session** (Claude has no API for that) — a reply is delivered by resuming the same session with `claude --resume` in a Terminal you can watch
+- **Reply & Suggest need the `claude` CLI signed in** — they shell out to `claude`; if the CLI is signed out (expired token), run `claude` once in Terminal to re-authenticate. Claude *Desktop* being signed in is separate
 - No sound; doesn't auto‑launch at login (add it yourself if you'd like)
 
 </td>

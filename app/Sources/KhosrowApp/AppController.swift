@@ -466,10 +466,25 @@ final class AppController: NSObject, NSApplicationDelegate {
             let out = AppController.runClaudePrint(claude: claude, prompt: meta, cwd: cwd)
             let text = (out ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             DispatchQueue.main.async {
-                if text.isEmpty { self?.notificationBubble?.suggestionFailed() }
-                else { self?.notificationBubble?.setSuggestion(text) }
+                if let reason = AppController.claudeErrorReason(text) {
+                    self?.notificationBubble?.suggestionFailed(reason)   // don't dump raw errors into the field
+                } else {
+                    self?.notificationBubble?.setSuggestion(text)
+                }
             }
         }
+    }
+
+    /// If `claude -p` output is actually an error (not a suggestion), return a
+    /// short, actionable reason to show; otherwise nil.
+    private static func claudeErrorReason(_ out: String) -> String? {
+        if out.isEmpty { return "No suggestion came back — type your reply…" }
+        let s = out.lowercased()
+        if s.contains("api error") || s.contains("authentication") || s.contains("401")
+            || s.contains("not logged in") || s.contains("/login") || s.hasPrefix("failed to") {
+            return "Sign the Claude CLI in first: run  claude  in Terminal, then retry."
+        }
+        return nil
     }
 
     /// Run `claude -p` with tools disabled, prompt on stdin, with a watchdog.
@@ -478,10 +493,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         proc.executableURL = URL(fileURLWithPath: claude)
         proc.arguments = ["-p", "--tools", ""]          // no tools -> pure text generation
         proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
-        // Never let the suggestion call trip the "nested Claude Code session" guard.
+        // Run like a normal terminal: drop the Claude Code session + auth-context
+        // env vars so `claude` uses your normal signed-in CLI credentials (and
+        // never trips the nested-session guard or an endpoint/token mismatch).
         var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "CLAUDECODE")
-        env.removeValue(forKey: "CLAUDE_CODE_ENTRYPOINT")
+        for key in env.keys where key.hasPrefix("CLAUDE_CODE") || key.hasPrefix("ANTHROPIC_")
+            || key == "CLAUDECODE" || key == "CLAUDE_AGENT_SDK_VERSION"
+            || key == "CLAUDE_PID" || key == "CLAUDE_EFFORT" || key == "AI_AGENT" {
+            env.removeValue(forKey: key)
+        }
         proc.environment = env
         let outPipe = Pipe(), inPipe = Pipe()
         proc.standardOutput = outPipe

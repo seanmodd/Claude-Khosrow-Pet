@@ -189,11 +189,12 @@ final class NotificationBubbleWindow: NSWindow {
         replyField.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
     }
 
-    func suggestionFailed() {
+    func suggestionFailed(_ message: String = "Couldn't suggest — type your reply…") {
         spinner.stopAnimation(nil)
         replyField.isEnabled = true
         sendButton.isEnabled = true
-        replyField.placeholderString = "Couldn't suggest — type your reply…"
+        replyField.stringValue = ""
+        replyField.placeholderString = message
         resize()
     }
 
