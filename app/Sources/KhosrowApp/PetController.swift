@@ -70,7 +70,17 @@ final class PetController {
         .praying: "praying",
     ]
 
-    /// Load the bundled per-state frame sequences and their playback cadence.
+    /// Playback cadence for each bundled frame sequence.
+    private static let frameFPS: [PetState: Double] = [
+        .sleeping: 4, .reading: 5, .success: 9,
+        .writing: 6, .attentive: 6, .searching: 6,
+        .waitingForPermission: 5, .runningCommand: 8, .praying: 4,
+    ]
+
+    /// Load the bundled per-state art. Priority per state:
+    ///   1. a khosrow-<state>-N.png frame *sequence* (real animation)
+    ///   2. a gemini-<name>.png illustrated still (until its sequence exists)
+    ///   3. nothing -> the sprite-sheet clip mapped in the manifest
     private static func loadCustomAnims() -> [PetState: CustomAnim] {
         func loadFrames(_ name: String) -> [CGImage] {
             KhosrowResources.customFrameURLs(forState: name).compactMap { url -> CGImage? in
@@ -84,19 +94,12 @@ final class PetController {
             return CGImageSourceCreateImageAtIndex(src, 0, nil)
         }
         var out: [PetState: CustomAnim] = [:]
-
-        // Hand-drawn frame sequences (unchanged): sleeping / reading / success.
-        let sleeping = loadFrames("sleeping")
-        if !sleeping.isEmpty { out[.sleeping] = CustomAnim(frames: sleeping, fps: 4, loops: true) }
-        let reading = loadFrames("reading")
-        if !reading.isEmpty { out[.reading] = CustomAnim(frames: reading, fps: 5, loops: true) }
-        let success = loadFrames("success")
-        if !success.isEmpty { out[.success] = CustomAnim(frames: success, fps: 9, loops: true) }
-
-        // Gemini illustrated stills — one static frame per mood. `writing` now has
-        // its own dedicated art and no longer reuses the reading book frames.
-        for (state, name) in geminiActForState {
-            if let still = loadStill(gemini: name) {
+        for state in PetState.allCases {
+            let frames = loadFrames(state.rawValue)
+            if !frames.isEmpty {
+                out[state] = CustomAnim(frames: frames,
+                                        fps: frameFPS[state] ?? 6, loops: true)
+            } else if let name = geminiActForState[state], let still = loadStill(gemini: name) {
                 out[state] = CustomAnim(frames: [still], fps: 1, loops: true)
             }
         }

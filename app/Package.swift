@@ -41,6 +41,14 @@ let package = Package(
                 .copy("Resources/khosrow-success-3.png"),
                 .copy("Resources/khosrow-success-4.png"),
                 .copy("Resources/khosrow-success-5.png"),
+                // Gemini-generated animation frame sequences (magenta-keyed
+                // grids processed by scripts/make_frames_from_sheet.py).
+                .copy("Resources/khosrow-writing-1.png"),
+                .copy("Resources/khosrow-writing-2.png"),
+                .copy("Resources/khosrow-writing-3.png"),
+                .copy("Resources/khosrow-writing-4.png"),
+                .copy("Resources/khosrow-writing-5.png"),
+                .copy("Resources/khosrow-writing-6.png"),
                 // Gemini illustrated single-image "visual acts" (transparent
                 // cut-outs of one pose each), imported by
                 // scripts/import_gemini_acts.py and shown for their mood.
