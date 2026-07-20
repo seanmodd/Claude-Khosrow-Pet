@@ -512,9 +512,32 @@ final class AppController: NSObject, NSApplicationDelegate {
         let s = out.lowercased()
         if s.contains("api error") || s.contains("authentication") || s.contains("401")
             || s.contains("not logged in") || s.contains("/login") || s.hasPrefix("failed to") {
-            return "Sign the Claude CLI in first: run  claude  in Terminal, then retry."
+            return "Claude CLI is signed out — use the menu ▸ “Sign in to Claude CLI…”, then retry."
         }
         return nil
+    }
+
+    /// Open a Terminal that signs the standalone `claude` CLI in (one-time), so
+    /// 💡 Suggest can generate replies. Desktop's sign-in is separate from this.
+    @objc private func signInClaudeCLI() {
+        let claude = claudeExecutable()
+        func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let script = """
+        #!/bin/bash
+        unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+        clear
+        echo "Signing the Claude CLI in — this enables Khosrow's 💡 Suggest."
+        echo "Follow the prompts (a browser window will open), then you can close this."
+        echo
+        exec \(q(claude)) auth login
+        """
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("khosrow-signin-\(UUID().uuidString).command")
+        do {
+            try script.write(to: tmp, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp.path)
+            NSWorkspace.shared.open(tmp)
+        } catch { NSLog("Khosrow: sign-in failed: \(error)") }
     }
 
     /// Run `claude -p` with tools disabled, prompt on stdin, with a watchdog.
@@ -856,8 +879,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(sessionItem)
 
         let replyItem = makeItem("💬 Reply to Claude…", #selector(openReply), "r")
-        replyItem.toolTip = "Type a message and send it to your session (opens it via claude --resume in Terminal)."
+        replyItem.toolTip = "Type a message; opens your session in Claude Desktop with it copied (⌘V ↵ to send)."
         menu.addItem(replyItem)
+
+        let signInItem = makeItem("Sign in to Claude CLI…", #selector(signInClaudeCLI), "")
+        signInItem.toolTip = "One-time: sign the standalone claude CLI in so 💡 Suggest can generate replies."
+        menu.addItem(signInItem)
         menu.addItem(.separator())
 
         let clickThrough = makeItem("Click-through", #selector(toggleClickThrough), "")
