@@ -86,7 +86,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
 - 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* — **📌 pin** it to keep it open when you click away or focus elsewhere, **drag** it anywhere, or **✕** to dismiss (same info on **right‑click**, plus controls)
-- 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** sends a message straight to your session, **💡 Suggest** drafts the best reply for you (asks `claude` for the ideal next message), or **Open in Claude** focuses the app. **Drag** it anywhere, **minimize** it, or **✕** it — popups never block each other
+- 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** opens *your* session in **Claude Desktop** (via the `claude://resume` deep link) with your message copied — press **⌘V ↵** to send it; **💡 Suggest** drafts the best reply for you (asks `claude` for the ideal next message); or **Open in Claude** jumps to the session. **Drag** it anywhere, **minimize** it, or **✕** it — popups never block each other
 - 🆕 **Response timer** — while Claude composes a reply, a small ring near him estimates how far along it is (elapsed seconds + a filling arc), so you can tell a quick answer from a long one at a glance
 - **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**
 - **Menu‑bar control center** (the Faravahar glyph) + an **Animation Test Console**
@@ -99,8 +99,8 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - The optional double‑click `.app` is **unsigned** — first launch needs right‑click → **Open**; no notarization, App Store, or sandbox
 - **Detail mode is off by default** — turning it on surfaces real content, so mind screen‑shares
 - **Watch mode is best‑effort** — it reads Claude Code's transcript format, which can change between releases
-- **Replies can't be injected into a *live* Claude Desktop session** (Claude has no API for that) — a reply is delivered by resuming the same session with `claude --resume` in a Terminal you can watch
-- **Reply & Suggest need the `claude` CLI signed in** — they shell out to `claude`; if the CLI is signed out (expired token), run `claude` once in Terminal to re-authenticate. Claude *Desktop* being signed in is separate
+- **Replies can't be *silently* injected into a live Claude Desktop session** (there's no local API for that) — instead **Reply** opens the exact session in Claude Desktop via `claude://resume?session=<id>` and puts your message on the clipboard, so it's one **⌘V ↵** away (and you confirm before it sends)
+- **💡 Suggest needs the `claude` CLI signed in** — it shells out to `claude -p`; if the CLI is signed out (expired token), run `claude` once in Terminal to re-authenticate. (Reply doesn't need the CLI — it uses the deep link.)
 - No sound; doesn't auto‑launch at login (add it yourself if you'd like)
 
 </td>

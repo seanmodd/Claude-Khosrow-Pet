@@ -314,7 +314,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if notificationBubble == nil {
             let b = NotificationBubbleWindow()
             b.onDismiss = { [weak self] in self?.dismissNotification() }
-            b.onReply = { [weak self] text in self?.deliverReply(text); self?.dismissNotification() }
+            b.onReply = { [weak self] text in self?.deliverReply(text) }   // deliverReply shows the confirmation
             b.onOpenSession = { [weak self] in self?.openInClaudeDesktop() }
             b.onSuggest = { [weak self] in self?.generateSuggestion() }
             notificationBubble = b
@@ -548,40 +548,39 @@ final class AppController: NSObject, NSApplicationDelegate {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Deliver the user's reply to the session by resuming it in a Terminal
-    /// (there is no supported way to inject into a live Desktop session).
+    /// Deliver the user's reply by opening the exact session in Claude Desktop
+    /// and copying the message so it's one paste from being sent.
+    ///
+    /// There is no supported way to silently inject a turn into a live Desktop
+    /// session (no local endpoint; running `claude --resume` in a Terminal races
+    /// the single-writer live session and crashes). Opening the session by id via
+    /// the ungated `claude://resume?session=<uuid>` deep link, plus the clipboard,
+    /// reliably lands the reply in the session you're working in — and you confirm
+    /// with ⌘V ↵ so it can never fire into the wrong conversation.
     private func deliverReply(_ text: String) {
         guard let info = currentSessionInfo() else {
             notify(title: "No session to reply to", body: "Turn on Watch mode or assign a session first.")
             return
         }
-        let claudePath = ["\(NSHomeDirectory())/.local/bin/claude",
-                          "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) } ?? "claude"
-        func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let script = """
-        #!/bin/bash
-        unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
-        cd \(q(info.cwd)) 2>/dev/null || cd "$HOME"
-        clear
-        echo "→ Khosrow is delivering your reply to Claude Code…"
-        echo
-        exec \(q(claudePath)) --resume \(q(info.id)) \(q(text))
-        """
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("khosrow-reply-\(UUID().uuidString).command")
-        do {
-            try script.write(to: tmp, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp.path)
-            NSWorkspace.shared.open(tmp)
-        } catch {
-            NSLog("Khosrow: reply failed: \(error)")
-        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        openSessionInDesktop(info.id)
+        let preview = text.count > 70 ? String(text.prefix(70)) + "…" : text
+        notify(title: "Opened your session in Claude Desktop",
+               body: "Your reply is on the clipboard — press ⌘V then ↵ to send it:\n“\(preview)”")
     }
 
-    /// Focus Claude Desktop (best-effort; the scheme can't target a Code session).
+    /// Navigate Claude Desktop to a specific Claude Code session by its id.
+    private func openSessionInDesktop(_ id: String) {
+        let enc = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+        let url = URL(string: "claude://resume?session=\(enc)") ?? URL(string: "claude://claude.ai/code")!
+        NSWorkspace.shared.open(url)
+    }
+
+    /// The "Open in Claude" button — jump to this session in Claude Desktop.
     private func openInClaudeDesktop() {
-        if let url = URL(string: "claude://claude.ai/code") { NSWorkspace.shared.open(url) }
+        if let info = currentSessionInfo() { openSessionInDesktop(info.id) }
+        else if let url = URL(string: "claude://claude.ai/code") { NSWorkspace.shared.open(url) }
     }
 
     // MARK: Dragging
