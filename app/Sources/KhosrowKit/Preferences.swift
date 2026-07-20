@@ -30,10 +30,14 @@ public struct Preferences: Codable, Equatable {
     public var watchSession: String
     /// A cached human label for the assigned session (shown before a signal arrives).
     public var watchSessionLabel: String
+    /// Text/chrome size multiplier for the pill, popups, notification, ring, and
+    /// badge — independent of `scale` (which sizes the pet sprite).
+    public var uiFontScale: Double
 
     public static let scaleRange: ClosedRange<Double> = 0.25...4.0
     public static let speedRange: ClosedRange<Double> = 0.1...4.0
     public static let opacityRange: ClosedRange<Double> = 0.1...1.0
+    public static let uiFontScaleRange: ClosedRange<Double> = 0.5...3.0
 
     public init(scale: Double = 1.0,
                 speedMultiplier: Double = 1.0,
@@ -47,7 +51,8 @@ public struct Preferences: Codable, Equatable {
                 watchMode: Bool = false,
                 currentSkin: String = "khosrow",
                 watchSession: String = "auto",
-                watchSessionLabel: String = "") {
+                watchSessionLabel: String = "",
+                uiFontScale: Double = 1.0) {
         self.scale = scale
         self.speedMultiplier = speedMultiplier
         self.clickThrough = clickThrough
@@ -61,6 +66,7 @@ public struct Preferences: Codable, Equatable {
         self.currentSkin = currentSkin
         self.watchSession = watchSession
         self.watchSessionLabel = watchSessionLabel
+        self.uiFontScale = uiFontScale
     }
 
     /// Decode tolerantly so older saved preferences (missing the newer keys)
@@ -81,6 +87,7 @@ public struct Preferences: Codable, Equatable {
         currentSkin = try c.decodeIfPresent(String.self, forKey: .currentSkin) ?? d.currentSkin
         watchSession = try c.decodeIfPresent(String.self, forKey: .watchSession) ?? d.watchSession
         watchSessionLabel = try c.decodeIfPresent(String.self, forKey: .watchSessionLabel) ?? d.watchSessionLabel
+        uiFontScale = try c.decodeIfPresent(Double.self, forKey: .uiFontScale) ?? d.uiFontScale
     }
 
     /// Return a copy with all values clamped into their valid ranges.
@@ -89,6 +96,7 @@ public struct Preferences: Codable, Equatable {
         p.scale = Self.scaleRange.clamp(scale)
         p.speedMultiplier = Self.speedRange.clamp(speedMultiplier)
         p.opacity = Self.opacityRange.clamp(opacity)
+        p.uiFontScale = Self.uiFontScaleRange.clamp(uiFontScale)
         return p
     }
 }

@@ -15,6 +15,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var isHovering = false
     private var hoverHideWork: DispatchWorkItem?
     private var notificationBubble: NotificationBubbleWindow?
+    private var lastNotification: (title: String, body: String)?
     private var pendingIdleNotify: DispatchWorkItem?
     private var previousState: PetState?
     private let badge = BadgeView(frame: .zero)   // unread count on the pet
@@ -106,7 +107,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// Height of the band reserved beneath the sprite for the mood pill.
-    private func pillBandHeight() -> CGFloat { max(20, 26 * CGFloat(prefs.scale)) }
+    /// Sized by the text scale, so bigger text gets more room.
+    private func pillBandHeight() -> CGFloat { max(20, 26 * CGFloat(prefs.uiFontScale)) }
 
     /// The whole window (sprite + pill band).
     private func containerSize() -> NSSize {
@@ -125,11 +127,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func layoutProgressRing() {
-        let d = max(22, 27 * CGFloat(prefs.scale))
+        let d = max(22, 27 * CGFloat(prefs.uiFontScale))
         let sprite = spriteSize()
         // top-left of the sprite (opposite the unread badge)
         progressRing.frame = NSRect(x: 1, y: pillBandHeight() + sprite.height - d, width: d, height: d)
-        progressRing.uiScale = CGFloat(prefs.scale)
+        progressRing.uiScale = CGFloat(prefs.uiFontScale)
     }
 
     // MARK: Response-progress ring (estimate of how far along Claude's reply is)
@@ -180,11 +182,26 @@ final class AppController: NSObject, NSApplicationDelegate {
         layoutContainer()
     }
 
-    /// Resize the window while keeping its center point fixed on screen.
+    /// Re-lay everything after a text-size change (independent of the pet scale).
+    private func applyUIFontScale() {
+        resizeKeepingCenter(to: containerSize())    // the pill band depends on the text size
+        layoutContainer()                           // repositions pill/badge/ring + updateMood
+        if isHovering { refreshHoverInfo() }
+        if let n = lastNotification, notificationBubble?.isVisible == true {
+            notify(title: n.title, body: n.body)    // re-render the bubble at the new size
+        }
+    }
+
+    /// Resize the window while keeping its center point fixed — but clamped so it
+    /// never slides off the visible screen (e.g. when text size grows it a lot).
     private func resizeKeepingCenter(to newSize: NSSize) {
         let old = window.frame
-        let origin = NSPoint(x: old.midX - newSize.width / 2,
+        var origin = NSPoint(x: old.midX - newSize.width / 2,
                              y: old.midY - newSize.height / 2)
+        if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, vf.minX), max(vf.minX, vf.maxX - newSize.width))
+            origin.y = min(max(origin.y, vf.minY), max(vf.minY, vf.maxY - newSize.height))
+        }
         window.setFrame(NSRect(origin: origin, size: newSize), display: true)
     }
 
@@ -201,7 +218,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Refresh the pill's label + position for the current mood, and the popup if open.
     private func updateMood() {
         let state = controller.state
-        pill.set(text: pillText(state), scale: CGFloat(prefs.scale))
+        pill.set(text: pillText(state), scale: CGFloat(prefs.uiFontScale))
         let sz = pill.pillSize
         let band = pillBandHeight()
         pill.frame = NSRect(x: (spriteSize().width - sz.width) / 2,
@@ -256,7 +273,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func refreshHoverInfo() {
         let info = actionExplanation()
-        hoverInfo?.update(title: info.title, lines: info.lines, scale: CGFloat(prefs.scale))
+        hoverInfo?.update(title: info.title, lines: info.lines, scale: CGFloat(prefs.uiFontScale))
         positionHoverInfo()
     }
 
@@ -269,7 +286,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func positionAbovePet(_ win: NSWindow) {
         guard let screen = window.screen ?? NSScreen.main else { return }
         let pet = window.frame, size = win.frame.size, vf = screen.visibleFrame
-        var y = pet.maxY + 8 * CGFloat(prefs.scale)
+        var y = pet.maxY + 8 * CGFloat(prefs.uiFontScale)
         if y + size.height > vf.maxY { y = pet.minY - size.height - 8 }   // flip below if needed
         var x = pet.midX - size.width / 2
         x = min(max(x, vf.minX + 4), vf.maxX - size.width - 4)
@@ -290,10 +307,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             b.onSuggest = { [weak self] in self?.generateSuggestion() }
             notificationBubble = b
         }
+        lastNotification = (title, body)
         notificationBubble?.present(title: title,
                                     timestamp: Self.timeFormatter.string(from: Date()),
                                     body: body, canReply: currentSessionInfo() != nil,
-                                    scale: CGFloat(prefs.scale))
+                                    scale: CGFloat(prefs.uiFontScale))
         positionAbovePet(notificationBubble!)
         notificationBubble?.orderFront(nil)
         setUnread(0)                                   // seeing it clears the badge
@@ -361,10 +379,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func layoutBadge() {
-        let d = max(16, 18 * CGFloat(prefs.scale))
+        let d = max(16, 18 * CGFloat(prefs.uiFontScale))
         let sprite = spriteSize()
         badge.frame = NSRect(x: sprite.width - d, y: pillBandHeight() + sprite.height - d, width: d, height: d)
-        badge.uiScale = CGFloat(prefs.scale)
+        badge.uiScale = CGFloat(prefs.uiFontScale)
     }
 
     private func bumpUnread() { setUnread(unread + 1) }
@@ -855,6 +873,20 @@ final class AppController: NSObject, NSApplicationDelegate {
         scaleItem.submenu = scaleMenu
         menu.addItem(scaleItem)
 
+        // Text size submenu — the mood pill, popups, notification, badge & timer
+        // ring, sized independently of the pet Scale above.
+        let textItem = NSMenuItem(title: "Text size", action: nil, keyEquivalent: "")
+        let textMenu = NSMenu()
+        for pct in [75, 100, 125, 150, 200, 250, 300] {
+            let item = makeItem("\(pct)%", #selector(pickUIFontScale(_:)), "")
+            item.representedObject = Double(pct) / 100.0
+            item.state = abs(prefs.uiFontScale - Double(pct) / 100.0) < 0.001 ? .on : .off
+            textMenu.addItem(item)
+        }
+        textItem.submenu = textMenu
+        textItem.toolTip = "Size of the mood pill, popups, notifications, badge & timer — independent of Scale."
+        menu.addItem(textItem)
+
         // Skin submenu
         let skinItem = NSMenuItem(title: "Skin", action: nil, keyEquivalent: "")
         let skinMenu = NSMenu()
@@ -1108,6 +1140,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let scale = sender.representedObject as? Double else { return }
         prefs.scale = Preferences.scaleRange.clamp(scale)
         applyScale()
+        store.save(prefs); rebuildMenu()
+    }
+
+    @objc private func pickUIFontScale(_ sender: NSMenuItem) {
+        guard let v = sender.representedObject as? Double else { return }
+        prefs.uiFontScale = Preferences.uiFontScaleRange.clamp(v)
+        applyUIFontScale()
         store.save(prefs); rebuildMenu()
     }
 

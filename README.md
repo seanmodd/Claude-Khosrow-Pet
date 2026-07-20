@@ -122,7 +122,8 @@ Every control lives behind the **Faravahar** glyph in your menu bar:
 - **Show detail** — opt‑in: surface the current file / command / prompt
 - **Click‑through** — let the mouse pass beneath him
 - **Float on top** · **Show on all Spaces** — window‑behavior toggles
-- **Scale ▸** — 25% … 400%
+- **Scale ▸** — 25% … 400% (the pet sprite)
+- 🆕 **Text size ▸** — 75% … 300% for the mood pill, popups, notifications, badge & timer ring — **independent of Scale**, so you can keep the pet small but the text big
 - **Skin ▸** — switch characters (Khosrow, Sepia, or your own from `~/.claude-pet/skins/`)
 - **Animation Test Console…** — preview every clip, step frames, check the alpha cut‑out
 - **Reset Position** — bring him home (a lifesaver on a multi‑display setup)
