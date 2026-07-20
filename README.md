@@ -86,7 +86,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 - 🆕 **Show what he's doing** — opt‑in **Detail mode** surfaces the current file / command / prompt
 - 🆕 **Skins** — switch characters in‑app from the menu, or drop your own into `~/.claude-pet/skins/` (ships with a **Sepia** variant)
 - 🆕 **Mood label** always shown in a pill beneath him; **hover** for a scaling popup explaining *why* (same info on **right‑click**, plus controls)
-- 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** sends a message straight to your session, or **Open in Claude** focuses the app
+- 🆕 **Notifications** — when Claude finishes or needs you, a bubble pops above him (what happened + timestamp) with an unread **badge**; **↩ Reply** sends a message straight to your session, **💡 Suggest** drafts the best reply for you (asks `claude` for the ideal next message), or **Open in Claude** focuses the app
 - **Scale 25% → 400%**, crisp on Retina & multiple monitors; **Show on all Spaces**
 - **Menu‑bar control center** (the Faravahar glyph) + an **Animation Test Console**
 - Runs **completely standalone**; **100% native AppKit** — no Electron, no web view, never touches Claude Desktop
