@@ -1,12 +1,13 @@
 #if canImport(AppKit)
 import AppKit
 
-/// A small floating, blurred info card shown when you hover the pet. It explains
-/// the current mood and *why* (the same content as the right-click menu), styled
-/// as a rounded HUD popover and scaled by the menu-bar Scale setting. Purely
+/// A small floating info card shown when you hover the pet. It explains the
+/// current mood and *why* (the same content as the right-click menu), styled as
+/// a rounded card and scaled by the menu-bar Scale setting. A solid light
+/// background with dark text keeps it legible over any window behind it. Purely
 /// informational: it never accepts mouse events or steals focus.
 final class HoverInfoWindow: NSWindow {
-    private let effect = NSVisualEffectView()
+    private let card = NSView()
     private let stack = NSStackView()
     private var padLeading: NSLayoutConstraint!
     private var padTrailing: NSLayoutConstraint!
@@ -23,22 +24,22 @@ final class HoverInfoWindow: NSWindow {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        effect.material = .hudWindow
-        effect.state = .active
-        effect.blendingMode = .behindWindow
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
-        effect.layer?.masksToBounds = true
-        contentView = effect
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(calibratedWhite: 0.98, alpha: 0.98).cgColor
+        card.layer?.cornerRadius = 12
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor(calibratedWhite: 0.0, alpha: 0.12).cgColor
+        card.layer?.masksToBounds = true
+        contentView = card
 
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(stack)
-        padLeading = stack.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 12)
-        padTrailing = effect.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 12)
-        padTop = stack.topAnchor.constraint(equalTo: effect.topAnchor, constant: 10)
-        padBottom = effect.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 10)
+        card.addSubview(stack)
+        padLeading = stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12)
+        padTrailing = card.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: 12)
+        padTop = stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10)
+        padBottom = card.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 10)
         NSLayoutConstraint.activate([padLeading, padTrailing, padTop, padBottom])
     }
 
@@ -52,14 +53,14 @@ final class HoverInfoWindow: NSWindow {
         padLeading.constant = pad; padTrailing.constant = pad
         padTop.constant = pad * 0.85; padBottom.constant = pad * 0.85
         stack.spacing = 3 * s
-        effect.layer?.cornerRadius = 12 * s
+        card.layer?.cornerRadius = 12 * s
 
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let maxWidth = 320 * s
 
         let titleField = NSTextField(labelWithString: title)
         titleField.font = .boldSystemFont(ofSize: 12.5 * s)
-        titleField.textColor = .white
+        titleField.textColor = .black
         titleField.lineBreakMode = .byTruncatingTail
         titleField.preferredMaxLayoutWidth = maxWidth
         stack.addArrangedSubview(titleField)
@@ -67,7 +68,7 @@ final class HoverInfoWindow: NSWindow {
         for line in lines where !line.isEmpty {
             let f = NSTextField(wrappingLabelWithString: line)
             f.font = .systemFont(ofSize: 11 * s)
-            f.textColor = NSColor.white.withAlphaComponent(0.86)
+            f.textColor = NSColor(calibratedWhite: 0.17, alpha: 1.0)
             f.preferredMaxLayoutWidth = maxWidth
             f.isSelectable = false
             stack.addArrangedSubview(f)
