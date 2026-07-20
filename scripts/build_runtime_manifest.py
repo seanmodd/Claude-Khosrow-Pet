@@ -51,13 +51,13 @@ CLIPS = [
 #   state,               clip,          override_fps, dim,   rationale
 STATES = [
     ("idle",                 "idle",        None,  False, "Default resting stance."),
-    ("attentive",            "present",     None,  False, "Arms open, engaged right after a session or sub-task starts."),
-    ("writing",              "idle_guard",  None,  False, "Composing a response to your prompt: shows the hand-drawn book frames (reuses khosrow-reading-* until dedicated khosrow-writing-* art exists)."),
+    ("attentive",            "present",     None,  False, "Engaged and attentive — Gemini illustrated pose (gemini-attentive, hand to chin); falls back to the open-armed 'present' clip if the still is absent."),
+    ("writing",              "idle_guard",  None,  False, "Composing a response to your prompt — dedicated Gemini illustrated pose (gemini-writing, writing in an open book). No longer reuses the reading art; falls back to the calm idle_guard clip."),
     ("reading",              "idle_guard",  None,  False, "Reads an open book: bundled hand-drawn khosrow-reading-* frames (falls back to the calm idle_guard clip if absent)."),
-    ("searching",            "walk_right",  None,  False, "Moves/scans while searching the codebase."),
+    ("searching",            "walk_right",  None,  False, "Scanning the codebase — Gemini illustrated pose (gemini-searching, hand shading his eyes); falls back to the walk_right clip."),
     ("editing",              "ready",       None,  False, "Handling the sword = actively editing files."),
-    ("runningCommand",       "run_left",    None,  False, "Literally running = executing a command."),
-    ("waitingForPermission", "present",     9,     False, "Engaged, awaiting your input (shares 'present' with attentive; no dedicated pose)."),
+    ("runningCommand",       "run_left",    None,  False, "Executing a command — Gemini illustrated pose (gemini-running, on horseback at a gallop); falls back to the run_left clip."),
+    ("waitingForPermission", "present",     9,     False, "Waiting for you — Gemini illustrated pose (gemini-waiting, checking his wrist); falls back to the 'present' clip."),
     ("success",              "cheer",       None,  False, "Raises his sword in triumph: bundled hand-drawn khosrow-success-* frames (falls back to the cheer clip if absent)."),
     ("failure",              "bow",         None,  False, "Head-down bow reads as apology/defeat on failure."),
     ("sleeping",             "idle",        4,     False, "Sleeps in a hand-drawn bed: bundled khosrow-sleeping-* frames (falls back to the idle clip if absent)."),

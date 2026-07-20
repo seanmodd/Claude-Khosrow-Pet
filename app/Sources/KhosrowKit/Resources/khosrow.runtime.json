@@ -137,14 +137,14 @@
       "clip": "present",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Arms open, engaged right after a session or sub-task starts."
+      "rationale": "Engaged and attentive \u2014 Gemini illustrated pose (gemini-attentive, hand to chin); falls back to the open-armed 'present' clip if the still is absent."
     },
     "writing": {
       "state": "writing",
       "clip": "idle_guard",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Composing a response to your prompt: shows the hand-drawn book frames (reuses khosrow-reading-* until dedicated khosrow-writing-* art exists)."
+      "rationale": "Composing a response to your prompt \u2014 dedicated Gemini illustrated pose (gemini-writing, writing in an open book). No longer reuses the reading art; falls back to the calm idle_guard clip."
     },
     "reading": {
       "state": "reading",
@@ -158,7 +158,7 @@
       "clip": "walk_right",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Moves/scans while searching the codebase."
+      "rationale": "Scanning the codebase \u2014 Gemini illustrated pose (gemini-searching, hand shading his eyes); falls back to the walk_right clip."
     },
     "editing": {
       "state": "editing",
@@ -172,14 +172,14 @@
       "clip": "run_left",
       "fpsOverride": null,
       "dim": false,
-      "rationale": "Literally running = executing a command."
+      "rationale": "Executing a command \u2014 Gemini illustrated pose (gemini-running, on horseback at a gallop); falls back to the run_left clip."
     },
     "waitingForPermission": {
       "state": "waitingForPermission",
       "clip": "present",
       "fpsOverride": 9,
       "dim": false,
-      "rationale": "Engaged, awaiting your input (shares 'present' with attentive; no dedicated pose)."
+      "rationale": "Waiting for you \u2014 Gemini illustrated pose (gemini-waiting, checking his wrist); falls back to the 'present' clip."
     },
     "success": {
       "state": "success",

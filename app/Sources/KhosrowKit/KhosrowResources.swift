@@ -62,6 +62,18 @@ public enum KhosrowResources {
         return urls
     }
 
+    /// The bundled Gemini illustrated "visual acts" — one transparent still per
+    /// mood, imported by `scripts/import_gemini_acts.py`. Named `gemini-<name>.png`
+    /// (e.g. `gemini-praying`). Returns nil when the named act is not bundled, so
+    /// callers fall back to the sprite-sheet clip.
+    public static let geminiActNames = [
+        "attentive", "searching", "waiting", "writing", "running", "praying",
+    ]
+
+    public static func geminiActURL(named name: String) -> URL? {
+        Bundle.module.url(forResource: "gemini-\(name)", withExtension: "png")
+    }
+
     /// The bundled "watch mode" script — lets the app follow Claude Code's
     /// transcripts with no settings.json edit and no restart.
     public static func watchScriptURL() -> URL? {

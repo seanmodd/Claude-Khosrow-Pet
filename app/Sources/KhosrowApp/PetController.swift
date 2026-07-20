@@ -36,7 +36,9 @@ final class PetController {
         let fps: Double
         let loops: Bool
     }
-    /// Per-state custom sequences (sleeping / reading / success today).
+    /// Per-state art that replaces the sprite sheet: hand-drawn frame sequences
+    /// (sleeping / reading / success) and Gemini illustrated stills (attentive /
+    /// searching / waiting / writing / running / praying).
     private let customAnims: [PetState: CustomAnim]
     /// Playback cursor + accumulator for the active custom sequence.
     private var customFrame = 0
@@ -56,26 +58,48 @@ final class PetController {
         renderCurrentFrame()
     }
 
+    /// Which bundled Gemini illustrated still each mood shows by default. The
+    /// still (a transparent cut-out of one pose) replaces the sprite-sheet clip;
+    /// PetView aspect-fits it, so the differing proportions never distort.
+    static let geminiActForState: [PetState: String] = [
+        .attentive: "attentive",
+        .searching: "searching",
+        .waitingForPermission: "waiting",
+        .writing: "writing",
+        .runningCommand: "running",
+        // .praying is added when the Praying mood ships (see M3).
+    ]
+
     /// Load the bundled per-state frame sequences and their playback cadence.
     private static func loadCustomAnims() -> [PetState: CustomAnim] {
-        func load(_ name: String) -> [CGImage] {
+        func loadFrames(_ name: String) -> [CGImage] {
             KhosrowResources.customFrameURLs(forState: name).compactMap { url -> CGImage? in
                 guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
                 return CGImageSourceCreateImageAtIndex(src, 0, nil)
             }
         }
+        func loadStill(gemini name: String) -> CGImage? {
+            guard let url = KhosrowResources.geminiActURL(named: name),
+                  let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateImageAtIndex(src, 0, nil)
+        }
         var out: [PetState: CustomAnim] = [:]
-        let sleeping = load("sleeping")
+
+        // Hand-drawn frame sequences (unchanged): sleeping / reading / success.
+        let sleeping = loadFrames("sleeping")
         if !sleeping.isEmpty { out[.sleeping] = CustomAnim(frames: sleeping, fps: 4, loops: true) }
-        let reading = load("reading")
+        let reading = loadFrames("reading")
         if !reading.isEmpty { out[.reading] = CustomAnim(frames: reading, fps: 5, loops: true) }
-        let success = load("success")
+        let success = loadFrames("success")
         if !success.isEmpty { out[.success] = CustomAnim(frames: success, fps: 9, loops: true) }
-        // `writing` reuses the reading book frames (a touch livelier) until
-        // dedicated khosrow-writing-*.png art is added to Resources.
-        let writing = load("writing")
-        let writingFrames = writing.isEmpty ? reading : writing
-        if !writingFrames.isEmpty { out[.writing] = CustomAnim(frames: writingFrames, fps: 6, loops: true) }
+
+        // Gemini illustrated stills — one static frame per mood. `writing` now has
+        // its own dedicated art and no longer reuses the reading book frames.
+        for (state, name) in geminiActForState {
+            if let still = loadStill(gemini: name) {
+                out[state] = CustomAnim(frames: [still], fps: 1, loops: true)
+            }
+        }
         return out
     }
 
