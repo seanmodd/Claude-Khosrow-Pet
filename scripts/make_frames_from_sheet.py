@@ -557,7 +557,8 @@ def main():
     for f in frames:
         cur = f.width if primary_is_width else f.height
         target = med_w if primary_is_width else med_h
-        sc = max(0.65, min(1.35, target / max(1, cur)))
+        lo, hi = (0.5, 2.0) if args.files else (0.65, 1.35)   # cel reframes need full equalization
+        sc = max(lo, min(hi, target / max(1, cur)))
         if abs(sc - 1) > 0.02:
             f = f.resize((max(1, round(f.width * sc)), max(1, round(f.height * sc))), Image.LANCZOS)
         norm.append(f)
