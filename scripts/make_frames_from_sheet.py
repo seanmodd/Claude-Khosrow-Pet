@@ -482,6 +482,8 @@ def main():
     ap.add_argument("--cols", type=int, default=3)
     ap.add_argument("--auto", action="store_true",
                     help="auto-detect cells from content gaps (handles irregular grids)")
+    ap.add_argument("--files", default="",
+                    help="comma list of single-frame images (cel mode; overrides slicing)")
     ap.add_argument("--cells", default="",
                     help="explicit cell boxes as JSON [[l,t,r,b],...] (overrides --auto/--rows/--cols)")
     ap.add_argument("--register", default="lower", choices=["lower", "upper", "full"],
@@ -497,11 +499,17 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    sheet = Image.open(args.sheet).convert("RGB")
-    W, H = sheet.size
+    if args.files:
+        sheet, W, H = None, 0, 0          # cel mode: no sheet to slice
+    else:
+        sheet = Image.open(args.sheet).convert("RGB")
+        W, H = sheet.size
 
     frames = []
-    if args.cells:
+    if args.files:
+        for fp in args.files.split(","):
+            frames.append(key_cell(Image.open(fp.strip()).convert("RGB")))
+    elif args.cells:
         import json as _json
         pad = 4
         for (l, t, r_, b) in _json.loads(args.cells):
