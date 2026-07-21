@@ -323,6 +323,153 @@ def auto_cells(sheet: Image.Image):
     return [c for c in merged if (c[2] - c[0]) * (c[3] - c[1]) >= med * 0.35]
 
 
+
+
+def _mask(im, scale=4):
+    """Quarter-scale 0/255 alpha mask for fast comparisons."""
+    a = im.split()[3].point(lambda v: 255 if v >= 96 else 0)
+    return a.resize((max(1, im.width // scale), max(1, im.height // scale)), Image.NEAREST)
+
+
+def _xor_count(a, b):
+    from PIL import ImageChops
+    d = ImageChops.difference(a, b)
+    return sum(i * n for i, n in enumerate(d.histogram()[:256]) if n) // 255
+
+
+def auto_face(frames):
+    """Mirror any frame whose silhouette matches frame 1 better when flipped
+    (keeps e.g. a gallop consistently left-facing)."""
+    ref = _mask(frames[0])
+    out = [frames[0]]
+    flipped_n = 0
+    for f in frames[1:]:
+        m = _mask(f).resize(ref.size, Image.NEAREST)
+        fl = _mask(f.transpose(Image.FLIP_LEFT_RIGHT)).resize(ref.size, Image.NEAREST)
+        if _xor_count(fl, ref) + int(0.02 * ref.size[0] * ref.size[1] * 0) < _xor_count(m, ref) * 0.92:
+            out.append(f.transpose(Image.FLIP_LEFT_RIGHT))
+            flipped_n += 1
+        else:
+            out.append(f)
+    if flipped_n:
+        print(f"auto-face: mirrored {flipped_n} frame(s) to match frame 1")
+    return out
+
+
+def register_frames(frames):
+    """Offsets (per frame) aligning everything to frame 1 using the LOWER 45%%
+    of the silhouette (legs/base are the static part; arms/head move)."""
+    def low_mask(im):
+        a = im.split()[3].point(lambda v: 255 if v >= 96 else 0)
+        top = int(im.height * 0.55)
+        return a.crop((0, top, im.width, im.height))
+
+    ref_full = low_mask(frames[0])
+    offsets = [(0, 0)]
+    for f in frames[1:]:
+        m = low_mask(f)
+        best, best_off = None, (0, 0)
+        rng_x = max(6, frames[0].width // 8)
+        rng_y = max(4, frames[0].height // 16)
+        # coarse at 1/4 scale
+        ref4 = ref_full.resize((max(1, ref_full.width // 4), max(1, ref_full.height // 4)), Image.NEAREST)
+        m4 = m.resize((max(1, m.width // 4), max(1, m.height // 4)), Image.NEAREST)
+        for dy in range(-rng_y // 4, rng_y // 4 + 1):
+            for dx in range(-rng_x // 4, rng_x // 4 + 1):
+                c = Image.new("L", ref4.size, 0)
+                c.paste(m4, (dx, dy))
+                v = _xor_count(c, ref4)
+                if best is None or v < best:
+                    best, best_off = v, (dx * 4, dy * 4)
+        # refine at full res
+        bx, by = best_off
+        best = None
+        fine = (0, 0)
+        for dy in range(by - 3, by + 4):
+            for dx in range(bx - 3, bx + 4):
+                c = Image.new("L", ref_full.size, 0)
+                c.paste(m, (dx, dy))
+                v = _xor_count(c, ref_full)
+                if best is None or v < best:
+                    best, fine = v, (dx, dy)
+        offsets.append(fine)
+    return offsets
+
+
+def temporal_debris_filter(placed):
+    """Kill flickering generator debris: opaque pixels lying outside the
+    dilated everyone-agrees silhouette AND belonging to small components.
+    Moving limbs are large connected components, so they survive."""
+    from PIL import ImageFilter as IF
+    n = len(placed)
+    W, H = placed[0].size
+    # majority mask: opaque in >= half the frames
+    acc = [0] * (W * H)
+    masks = []
+    for f in placed:
+        a = f.split()[3].point(lambda v: 1 if v >= 96 else 0)
+        masks.append(a)
+        data = a.tobytes()
+        for idx, byte in enumerate(data):
+            if byte:
+                acc[idx] += 1
+    maj = Image.frombytes("L", (W, H), bytes(255 if c * 2 >= n else 0 for c in acc))
+    maj = maj.filter(IF.MaxFilter(9))          # dilate
+    majp = maj.load()
+
+    total_fig = max(1, sum(1 for c in acc if c * 2 >= n))
+    small_thr = max(60, int(total_fig * 0.02))
+
+    out = []
+    for f in placed:
+        px = f.load()
+        a = f.split()[3]
+        ap = a.load()
+        seen = bytearray(W * H)
+        for sy in range(0, H, 2):
+            for sx in range(0, W, 2):
+                if ap[sx, sy] < 96 or seen[sy * W + sx]:
+                    continue
+                comp = []
+                q = deque([(sx, sy)])
+                seen[sy * W + sx] = 1
+                outside = 0
+                while q:
+                    x, y = q.popleft()
+                    comp.append((x, y))
+                    if majp[x, y] == 0:
+                        outside += 1
+                    for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                        if 0 <= nx < W and 0 <= ny < H and not seen[ny * W + nx] and ap[nx, ny] >= 96:
+                            seen[ny * W + nx] = 1
+                            q.append((nx, ny))
+                if len(comp) <= small_thr and outside > len(comp) * 0.6:
+                    for (x, y) in comp:            # debris: erase (plus halo)
+                        for ddx in (-1, 0, 1):
+                            for ddy in (-1, 0, 1):
+                                xx, yy = x + ddx, y + ddy
+                                if 0 <= xx < W and 0 <= yy < H:
+                                    px[xx, yy] = (0, 0, 0, 0)
+        out.append(f)
+    return out
+
+
+def report_stability(outs):
+    """Objective loop-stability metrics: silhouette drift between consecutive
+    frames (and wraparound). Big numbers = jumpy animation."""
+    ms = [_mask(f, scale=2) for f in outs]
+    diffs = []
+    for i in range(len(ms)):
+        j = (i + 1) % len(ms)
+        a, b = ms[i], ms[j]
+        if a.size != b.size:
+            b = b.resize(a.size, Image.NEAREST)
+        diffs.append(_xor_count(a, b))
+    area = max(1, outs[0].size[0] * outs[0].size[1] // 4)
+    pct = [round(100 * d / area, 1) for d in diffs]
+    print("frame-to-frame silhouette change % (incl. loop seam):", pct)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sheet")
@@ -333,6 +480,8 @@ def main():
                     help="auto-detect cells from content gaps (handles irregular grids)")
     ap.add_argument("--cells", default="",
                     help="explicit cell boxes as JSON [[l,t,r,b],...] (overrides --auto/--rows/--cols)")
+    ap.add_argument("--auto-face", action="store_true", dest="auto_face",
+                    help="mirror frames whose silhouette matches frame 1 better flipped")
     ap.add_argument("--flip", default="",
                     help="comma list of 1-based frame indices to mirror horizontally")
     ap.add_argument("--fps", type=float, default=6)
@@ -373,12 +522,19 @@ def main():
         frames = [f.transpose(Image.FLIP_LEFT_RIGHT) if (i + 1) in flips else f
                   for i, f in enumerate(frames)]
 
-    # Crop each frame to its own content, then normalize sizes: cells from an
-    # irregular grid are often drawn at different scales, so we rescale every
-    # frame so its primary content dimension matches the median frame (capped
-    # at ±35% correction; the primary axis is whichever the subject is longer
-    # in — width for the horse, height for a standing figure).
+    # ---- Stabilization stage -------------------------------------------
+    # The generator draws each cell with small position/scale variance; naive
+    # per-frame bottom-center anchoring made crowns bob and feet wobble. Fix:
+    #   1. normalize scale to the median frame
+    #   2. REGISTER every frame against frame 1 on the static lower body
+    #   3. compose on one shared canvas with fixed margins (headroom!)
+    #   4. temporal debris vote: opaque pixels far from the everyone-agrees
+    #      figure that belong to small components are generator debris
     frames = [f.crop(f.getbbox()) if f.getbbox() else f for f in frames]
+
+    if args.auto_face:
+        frames = auto_face(frames)
+
     ws = sorted(f.width for f in frames)
     hs = sorted(f.height for f in frames)
     med_w, med_h = ws[len(ws) // 2], hs[len(hs) // 2]
@@ -387,26 +543,73 @@ def main():
     for f in frames:
         cur = f.width if primary_is_width else f.height
         target = med_w if primary_is_width else med_h
-        s = max(0.65, min(1.35, target / max(1, cur)))
-        if abs(s - 1) > 0.02:
-            f = f.resize((max(1, round(f.width * s)), max(1, round(f.height * s))), Image.LANCZOS)
+        sc = max(0.65, min(1.35, target / max(1, cur)))
+        if abs(sc - 1) > 0.02:
+            f = f.resize((max(1, round(f.width * sc)), max(1, round(f.height * sc))), Image.LANCZOS)
         norm.append(f)
     frames = norm
 
-    # One steady output canvas: fit the largest normalized frame, then place
-    # every frame bottom-centered at a SHARED scale (no per-frame zoom jitter).
-    max_w = max(f.width for f in frames)
-    max_h = max(f.height for f in frames)
-    shared = min(CANVAS_W / max_w, CANVAS_H / max_h)
+    offsets = register_frames(frames)
+    # Registration must EARN its keep: if the frames were already aligned
+    # (some sheets are), shifting them adds wobble instead of removing it.
+    def total_drift(offs):
+        W_ = max(o[0] + f.width for f, o in zip(frames, offs)) - min(o[0] for o in offs)
+        H_ = max(o[1] + f.height for f, o in zip(frames, offs)) - min(o[1] for o in offs)
+        mx, my = min(o[0] for o in offs), min(o[1] for o in offs)
+        ms = []
+        for f, (ox, oy) in zip(frames, offs):
+            c = Image.new("L", (W_, H_), 0)
+            c.paste(f.split()[3].point(lambda v: 255 if v >= 96 else 0), (ox - mx, oy - my))
+            ms.append(c.resize((max(1, W_ // 3), max(1, H_ // 3)), Image.NEAREST))
+        vals = [_xor_count(ms[i], ms[(i + 1) % len(ms)]) for i in range(len(ms))]
+        return sum(vals) + 2 * max(vals)
+    zero = [(0, 0)] * len(frames)
+    # bottom-align the zero-offset variant (previous behaviour)
+    zoffs = [(0, max(fr.height for fr in frames) - f.height) for f in frames]
+    if total_drift(zoffs) <= total_drift(offsets):
+        offsets = zoffs
+        print("registration skipped (frames already aligned)")
+    else:
+        print("registration applied")
+
+    # Shared workspace: place every frame at its registered offset.
+    minx = min(o[0] for o in offsets); miny = min(o[1] for o in offsets)
+    maxx = max(o[0] + f.width for f, o in zip(frames, offsets))
+    maxy = max(o[1] + f.height for f, o in zip(frames, offsets))
+    W2, H2 = maxx - minx, maxy - miny
+    placed = []
+    for f, (ox, oy) in zip(frames, offsets):
+        c = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
+        c.paste(f, (ox - minx, oy - miny), f)
+        placed.append(c)
+
+    placed = temporal_debris_filter(placed)
+
+    # Union bbox + margins (extra headroom protects the crown from looking
+    # clipped at the canvas top).
+    boxes = [f.getbbox() for f in placed if f.getbbox()]
+    l = min(b[0] for b in boxes); t = min(b[1] for b in boxes)
+    r_ = max(b[2] for b in boxes); btm = max(b[3] for b in boxes)
+    mw = max(3, int((r_ - l) * 0.04))
+    mt = max(6, int((btm - t) * 0.06))
+    l = max(0, l - mw); r_ = min(W2, r_ + mw)
+    t = max(0, t - mt); btm = min(H2, btm + 3)
+    placed = [f.crop((l, t, r_, btm)) for f in placed]
+
+    # ONE shared scale onto the pet canvas, bottom-centered.
+    cw, chh = placed[0].width, placed[0].height
+    shared = min(CANVAS_W / cw, CANVAS_H / chh)
     outs = []
-    for i, f in enumerate(frames, 1):
-        nw, nh = max(1, round(f.width * shared)), max(1, round(f.height * shared))
+    for i, f in enumerate(placed, 1):
+        nw, nh = max(1, round(cw * shared)), max(1, round(chh * shared))
         f = f.resize((nw, nh), Image.LANCZOS)
         canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
-        canvas.paste(f, ((CANVAS_W - nw) // 2, CANVAS_H - nh), f)   # bottom-center
-        p = os.path.join(args.out, f"khosrow-{args.mood}-{i}.png")
-        canvas.save(p)
+        canvas.paste(f, ((CANVAS_W - nw) // 2, CANVAS_H - nh), f)
+        p_ = os.path.join(args.out, f"khosrow-{args.mood}-{i}.png")
+        canvas.save(p_)
         outs.append(canvas)
+
+    report_stability(outs)
     print(f"wrote {len(outs)} frames -> {args.out}/khosrow-{args.mood}-N.png")
 
     # Contact sheet on checkerboard for review.
