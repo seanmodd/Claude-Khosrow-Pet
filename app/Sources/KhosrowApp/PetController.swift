@@ -40,6 +40,9 @@ final class PetController {
     /// (sleeping / reading / success) and Gemini illustrated stills (attentive /
     /// searching / waiting / writing / running / praying).
     private let customAnims: [PetState: CustomAnim]
+    /// Art overrides from Configuration (mood -> chosen visual act). An entry
+    /// with a nil value forces the sprite-sheet clip; absent = built-in art.
+    private var artOverrides: [PetState: CustomAnim?] = [:]
     /// Playback cursor + accumulator for the active custom sequence.
     private var customFrame = 0
     private var customAccum: CFTimeInterval = 0
@@ -123,13 +126,37 @@ final class PetController {
         timer = nil
     }
 
+    /// The animation to show for a state: a Configuration override wins (a nil
+    /// override forces the sprite clip); else the built-in bundled art.
+    private func activeAnim(for state: PetState) -> CustomAnim? {
+        if let override = artOverrides[state] { return override }
+        return customAnims[state]
+    }
+
+    /// Override a mood's art with explicit frames (from any visual act), or
+    /// force the sprite-sheet clip (frames == nil). Pass through
+    /// `clearArtOverride` to return to the built-in default.
+    func setArtOverride(for state: PetState, frames: [CGImage]?, fps: Double, loops: Bool = true) {
+        if let frames, !frames.isEmpty {
+            artOverrides[state] = CustomAnim(frames: frames, fps: fps, loops: loops)
+        } else {
+            artOverrides[state] = CustomAnim?.none
+        }
+        if state == self.state { customFrame = 0; customAccum = 0; renderCurrentFrame() }
+    }
+
+    func clearArtOverride(for state: PetState) {
+        artOverrides.removeValue(forKey: state)
+        if state == self.state { customFrame = 0; customAccum = 0; renderCurrentFrame() }
+    }
+
     private func tick() {
         let now = CACurrentMediaTime()
         let dt = max(0, now - lastTick)
         lastTick = now
         guard !manualMode, !player.paused else { return }
         let step = dt * max(0.01, speedMultiplier)
-        if let anim = customAnims[state] {
+        if let anim = activeAnim(for: state) {
             advanceCustom(anim, by: step)
         } else if player.advance(by: step) {
             renderCurrentFrame()
@@ -212,7 +239,7 @@ final class PetController {
     private func renderCurrentFrame() {
         // Custom-frame moods draw their own art — except while the test console
         // has taken over manual clip preview, where the sheet should show.
-        if !manualMode, let anim = customAnims[state], !anim.frames.isEmpty {
+        if !manualMode, let anim = activeAnim(for: state), !anim.frames.isEmpty {
             view.show(anim.frames[min(customFrame, anim.frames.count - 1)])
             return
         }

@@ -40,11 +40,15 @@ public struct Preferences: Codable, Equatable {
     public var showProgressRing: Bool
     public var showUnreadBadge: Bool
     public var showNotificationBubbles: Bool
+    /// Seconds Khosrow stays idle before announcing "waiting for you"
+    /// (debounce against brief mid-response think-pauses).
+    public var waitingDebounceSeconds: Double
 
     public static let scaleRange: ClosedRange<Double> = 0.25...4.0
     public static let speedRange: ClosedRange<Double> = 0.1...4.0
     public static let opacityRange: ClosedRange<Double> = 0.1...1.0
     public static let uiFontScaleRange: ClosedRange<Double> = 0.5...3.0
+    public static let waitingDebounceRange: ClosedRange<Double> = 0...60
 
     public init(scale: Double = 1.0,
                 speedMultiplier: Double = 1.0,
@@ -64,7 +68,8 @@ public struct Preferences: Codable, Equatable {
                 showMoodPill: Bool = true,
                 showProgressRing: Bool = true,
                 showUnreadBadge: Bool = true,
-                showNotificationBubbles: Bool = true) {
+                showNotificationBubbles: Bool = true,
+                waitingDebounceSeconds: Double = 10) {
         self.scale = scale
         self.speedMultiplier = speedMultiplier
         self.clickThrough = clickThrough
@@ -84,6 +89,7 @@ public struct Preferences: Codable, Equatable {
         self.showProgressRing = showProgressRing
         self.showUnreadBadge = showUnreadBadge
         self.showNotificationBubbles = showNotificationBubbles
+        self.waitingDebounceSeconds = waitingDebounceSeconds
     }
 
     /// Decode tolerantly so older saved preferences (missing the newer keys)
@@ -110,6 +116,7 @@ public struct Preferences: Codable, Equatable {
         showProgressRing = try c.decodeIfPresent(Bool.self, forKey: .showProgressRing) ?? d.showProgressRing
         showUnreadBadge = try c.decodeIfPresent(Bool.self, forKey: .showUnreadBadge) ?? d.showUnreadBadge
         showNotificationBubbles = try c.decodeIfPresent(Bool.self, forKey: .showNotificationBubbles) ?? d.showNotificationBubbles
+        waitingDebounceSeconds = try c.decodeIfPresent(Double.self, forKey: .waitingDebounceSeconds) ?? d.waitingDebounceSeconds
     }
 
     /// Return a copy with all values clamped into their valid ranges.
@@ -119,6 +126,7 @@ public struct Preferences: Codable, Equatable {
         p.speedMultiplier = Self.speedRange.clamp(speedMultiplier)
         p.opacity = Self.opacityRange.clamp(opacity)
         p.uiFontScale = Self.uiFontScaleRange.clamp(uiFontScale)
+        p.waitingDebounceSeconds = Self.waitingDebounceRange.clamp(waitingDebounceSeconds)
         return p
     }
 }

@@ -1,6 +1,8 @@
 #if canImport(AppKit)
 import AppKit
+import ImageIO
 import KhosrowKit
+import UniformTypeIdentifiers
 
 /// Application delegate: builds the pet window, the menu-bar controls, wires the
 /// bridge, and persists preferences/position.
@@ -100,6 +102,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         refreshSessionsAsync()   // populate the session picker in the background
 
         configProfile = configStore.load()
+        applyProfileArt()
     }
 
     /// Re-activating the app (e.g. launching it again from Finder/Spotlight —
@@ -126,7 +129,9 @@ final class AppController: NSObject, NSApplicationDelegate {
                 case .hookMapping: return ConfigHookMappingBuilder.build(ctx)
                 case .rules: return ConfigRulesBuilder.build(ctx)
                 case .customMoods: return ConfigCustomMoodsBuilder.build(ctx)
-                default: return nil     // placeholders until their milestone lands
+                case .customActs: return ConfigCustomActsBuilder.build(ctx, self.makeDiagContext())
+                case .notifications: return ConfigNotificationsBuilder.build(ctx, self.makeDiagContext())
+                case .diagnostics: return ConfigDiagnosticsBuilder.build(ctx, self.makeDiagContext())
                 }
             }
             configWindow = c
@@ -139,12 +144,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         ConfigContext(
             profile: { [weak self] in self?.configProfile ?? .builtInDefault() },
             updateProfile: { [weak self] mutate in
-                guard let self else { return }
-                mutate(&self.configProfile)
-                try? self.configStore.save(self.configProfile)
-                self.configProfile = self.configStore.load()   // reconciled copy
-                self.updateMood()                              // pill text may change
-                self.refreshConfigSection()
+                self?.mutateProfile(mutate)
             },
             prefs: { [weak self] in self?.prefs ?? Preferences() },
             updatePrefs: { [weak self] mutate in
@@ -206,7 +206,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                   let cg = sheet.frame(row: clip.row, index: 0) else { return nil }
             return NSImage(cgImage: cg, size: .zero)
         case .customFrames:
-            return nil    // arrives with custom visual acts (M8)
+            guard let art = frames(forAct: id), let first = art.frames.first else { return nil }
+            return NSImage(cgImage: first, size: .zero)
         }
     }
 
@@ -229,6 +230,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         do {
             configProfile = try configStore.importProfile(from: url)
             try configStore.save(configProfile)
+            applyProfileArt()
             updateMood()
             refreshConfigSection()
         } catch { presentConfigError("That file isn't a valid Khosrow configuration.") }
@@ -243,6 +245,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         configProfile = configStore.resetAll()
+        applyProfileArt()
         updateMood()
         refreshConfigSection()
     }
@@ -253,6 +256,247 @@ final class AppController: NSObject, NSApplicationDelegate {
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.runModal()
+    }
+
+    // MARK: Profile-driven art (mix-and-match on the live pet)
+
+    /// Directory holding imported custom acts: <App Support>/Khosrow/acts/<slug>/
+    private var customActsDir: URL {
+        ConfigurationStore.defaultDirectory().appendingPathComponent("acts", isDirectory: true)
+    }
+
+    /// Frames + fps for a visual act, for the live pet.
+    private func frames(forAct id: String) -> (frames: [CGImage], fps: Double, loops: Bool)? {
+        guard let act = configProfile.visualAct(id: id) else { return nil }
+        func cg(_ url: URL) -> CGImage? {
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            return CGImageSourceCreateImageAtIndex(src, 0, nil)
+        }
+        switch act.source {
+        case .geminiStill(let name):
+            guard let url = KhosrowResources.geminiActURL(named: name),
+                  let img = cg(url) else { return nil }
+            return ([img], 1, true)
+        case .frameSequence(let name):
+            let imgs = KhosrowResources.customFrameURLs(forState: name).compactMap(cg)
+            guard !imgs.isEmpty else { return nil }
+            return (imgs, act.fps, act.loops)
+        case .spriteClip(let clipId):
+            guard let clip = manifest.clips[clipId] else { return nil }
+            let imgs = (0..<clip.frameCount).compactMap { sheet.frame(row: clip.row, index: $0) }
+            guard !imgs.isEmpty else { return nil }
+            return (imgs, clip.fps, clip.loop)
+        case .customFrames(let slug):
+            let dir = customActsDir.appendingPathComponent(slug, isDirectory: true)
+            let urls = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension.lowercased() == "png" }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            let imgs = urls.compactMap(cg)
+            guard !imgs.isEmpty else { return nil }
+            return (imgs, act.fps, act.loops)
+        }
+    }
+
+    /// Sync the pet's per-mood art with the profile: any mood whose assigned
+    /// act differs from the shipped default gets a live override; defaults get
+    /// the built-in bundled art back. Missing custom assets fail safely (the
+    /// built-in art shows instead).
+    private func applyProfileArt() {
+        let defaults = ConfigurationProfile.builtInDefault()
+        for state in PetState.allCases {
+            guard let mood = configProfile.mood(id: state.rawValue),
+                  let defaultAct = defaults.mood(id: state.rawValue)?.visualActId else {
+                controller.clearArtOverride(for: state)
+                continue
+            }
+            if mood.visualActId == defaultAct {
+                controller.clearArtOverride(for: state)
+            } else if let art = frames(forAct: mood.visualActId) {
+                controller.setArtOverride(for: state, frames: art.frames,
+                                          fps: art.fps, loops: art.loops)
+            } else {
+                controller.clearArtOverride(for: state)   // missing asset: fall back
+            }
+        }
+    }
+
+    // MARK: Custom acts, CLI status, diagnostics
+
+    private func makeDiagContext() -> ConfigDiagContext {
+        ConfigDiagContext(
+            importCustomAct: { [weak self] in self?.importCustomAct() },
+            deleteCustomAct: { [weak self] id in self?.deleteCustomAct(id) },
+            setActFPS: { [weak self] id, fps in
+                self?.mutateProfile { p in
+                    if let i = p.visualActs.firstIndex(where: { $0.id == id }) { p.visualActs[i].fps = fps }
+                }
+            },
+            renameAct: { [weak self] id, name in
+                guard !name.isEmpty else { return }
+                self?.mutateProfile { p in
+                    if let i = p.visualActs.firstIndex(where: { $0.id == id && !$0.builtin }) {
+                        p.visualActs[i].displayName = name
+                    }
+                }
+            },
+            cliStatus: { [weak self] done in self?.checkCLIStatus(done) ?? done("unknown") },
+            signInCLI: { [weak self] in self?.signInClaudeCLI() },
+            diagnosticsInfo: { [weak self] in self?.diagnosticsInfo() ?? [] },
+            simulateCondition: { [weak self] id in self?.simulateCondition(id) },
+            resetMappings: { [weak self] in
+                self?.mutateProfile { p in p.assignments = ConfigurationProfile.builtInAssignments() }
+            },
+            exportDiagnostics: { [weak self] in self?.exportDiagnostics() })
+    }
+
+    /// Shared "mutate + persist + refresh" used by the diag context.
+    private func mutateProfile(_ mutate: (inout ConfigurationProfile) -> Void) {
+        mutate(&configProfile)
+        try? configStore.save(configProfile)
+        configProfile = configStore.load()
+        applyProfileArt()
+        updateMood()
+        refreshConfigSection()
+    }
+
+    /// Import a PNG / GIF / ordered PNG sequence as a new custom visual act.
+    private func importCustomAct() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .gif]
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose one PNG or GIF, or several PNG frames in order."
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let slug = "act-\(UUID().uuidString.prefix(8).lowercased())"
+        let dir = customActsDir.appendingPathComponent(slug, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var frameIndex = 1
+            for url in panel.urls {
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { continue }
+                let count = CGImageSourceGetCount(src)     // GIF frames or 1 for PNG
+                for i in 0..<count {
+                    guard let img = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }
+                    let dest = dir.appendingPathComponent(String(format: "frame-%03d.png", frameIndex))
+                    guard let sink = CGImageDestinationCreateWithURL(dest as CFURL,
+                                                                     UTType.png.identifier as CFString, 1, nil) else { continue }
+                    CGImageDestinationAddImage(sink, img, nil)
+                    CGImageDestinationFinalize(sink)
+                    frameIndex += 1
+                }
+            }
+            guard frameIndex > 1 else {
+                presentConfigError("No frames could be read from that selection."); return
+            }
+            let name = panel.urls[0].deletingPathExtension().lastPathComponent
+            mutateProfile { p in
+                p.visualActs.append(VisualActDefinition(
+                    id: "custom-\(slug)", displayName: name,
+                    source: .customFrames(slug), group: .custom,
+                    fps: frameIndex > 2 ? 6 : 1, loops: true, builtin: false))
+            }
+        } catch {
+            presentConfigError("Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Delete a custom act: moods using it revert to their default art and the
+    /// imported files are removed. Built-in acts are structurally protected.
+    private func deleteCustomAct(_ id: String) {
+        guard let act = configProfile.visualAct(id: id), !act.builtin else { return }
+        if case .customFrames(let slug) = act.source {
+            try? FileManager.default.removeItem(
+                at: customActsDir.appendingPathComponent(slug, isDirectory: true))
+        }
+        mutateProfile { p in
+            p.visualActs.removeAll { $0.id == id && !$0.builtin }
+            // reconcile() repairs any mood still pointing at it.
+        }
+    }
+
+    /// Async standalone-CLI auth check. Only a coarse classification is ever
+    /// shown — never raw command output.
+    private func checkCLIStatus(_ done: @escaping (String) -> Void) {
+        let claude = claudeExecutable()
+        guard FileManager.default.isExecutableFile(atPath: claude) else {
+            done("not installed"); return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let out = AppController.runClaudePrint(claude: claude, prompt: "ping", cwd: NSHomeDirectory())
+            let text = (out ?? "").lowercased()
+            if text.isEmpty || text.contains("not logged in") || text.contains("/login")
+                || text.contains("401") || text.contains("authentication") {
+                done("⚠️ signed out — use “Sign in to Claude CLI…”")
+            } else {
+                done("✅ signed in — Suggest is ready")
+            }
+        }
+    }
+
+    /// Non-sensitive status pairs for the Diagnostics section.
+    private func diagnosticsInfo() -> [(String, String)] {
+        var rows: [(String, String)] = []
+        rows.append(("Current mood", controller.state.rawValue))
+        rows.append(("Assigned visual act",
+                     configProfile.mood(id: controller.state.rawValue)?.visualActId ?? "-"))
+        rows.append(("Mode", prefs.followBridge ? "Automatic" : "Hold"))
+        rows.append(("Watch mode", prefs.watchMode ? (watchProcess != nil ? "running" : "starting…") : "off"))
+        if let b = lastBridge {
+            rows.append(("Last signal", "\(b.state)\(b.tool.map { " · \($0)" } ?? "") @ \(b.timestamp)"))
+            rows.append(("Session", b.session.map { String($0.prefix(8)) } ?? "-"))
+        } else {
+            rows.append(("Last signal", "none yet"))
+        }
+        let problems = configProfile.validate()
+        rows.append(("Profile integrity", problems.isEmpty ? "OK" : problems.joined(separator: "; ")))
+        rows.append(("Rules", "\(configProfile.rules.count)"))
+        rows.append(("Custom moods", "\(configProfile.moods.filter { !$0.builtin }.count)"))
+        rows.append(("Storage", configStore.fileURL.path))
+        return rows
+    }
+
+    /// Fire a condition through the live mapping, exactly like a real signal.
+    private func simulateCondition(_ conditionId: String) {
+        guard let cond = configProfile.condition(id: conditionId) else { return }
+        let state: PetState
+        var tool: String?
+        if conditionId.hasPrefix("pre:") {
+            let name = String(conditionId.dropFirst(4))
+            tool = name
+            state = StateMapper.stateForTool(cond.toolCategory.flatMap { ToolCategory(rawValue: $0) })
+        } else {
+            switch conditionId {
+            case "userPromptSubmit", "postToolUse": state = .writing
+            case "stopSuccess": state = .success
+            case "stopFailure", "postToolUseFailure": state = .failure
+            case "permissionRequest", "notification": state = .waitingForPermission
+            case "sessionEnd": state = .sleeping
+            case "subagentStart": state = .searching
+            case "subagentStop": state = .idle
+            default: state = .attentive
+            }
+        }
+        switch ProfileResolver.resolve(state: state, tool: tool,
+                                       category: cond.toolCategory, profile: configProfile) {
+        case .mood(let id): controller.apply(state: PetState(rawValue: id) ?? state)
+        case .ignore: break
+        case .passthrough: controller.apply(state: state)
+        }
+    }
+
+    /// Write a non-sensitive diagnostic snapshot to a user-chosen file.
+    private func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "khosrow-diagnostics.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var dict: [String: Any] = [:]
+        for (k, v) in diagnosticsInfo() { dict[k] = v }
+        dict["appVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        dict["schemaVersion"] = ConfigurationProfile.currentSchemaVersion
+        dict["timestamp"] = ISO8601DateFormatter().string(from: Date())
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: url)
+        }
     }
 
     // MARK: Sizing
@@ -532,7 +776,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.bumpUnread()
             }
             pendingIdleNotify = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + prefs.waitingDebounceSeconds,
+                                          execute: work)
         default: break
         }
     }
