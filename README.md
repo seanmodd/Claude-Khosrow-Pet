@@ -25,9 +25,9 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
 
 ---
 
-## 🎬 His eleven moods
+## 🎬 His twelve moods
 
-> Every mood is a real animation — the hand‑drawn scenes (sleeping, reading, writing, success) or a clip from Khosrow's sprite sheet — exactly what you see on your desktop. He switches automatically based on Claude Code activity, or you can pin any one by hand from the menu.
+> Every mood is a real animation — Gemini-generated action scenes (writing with pages flipping, a full horse-gallop for running, breathing/beard-stroking attentive), the hand-drawn scenes (sleeping, reading, success), or a sprite-sheet clip — exactly what you see on your desktop. He switches automatically based on Claude Code activity, you can pin any one by hand from the menu, and **every mood↔artwork pairing is configurable** (see Configuration below).
 
 <table>
   <tr>
@@ -44,12 +44,13 @@ Khosrow is a tiny **desktop companion**. He idles, walks, works, cheers, bows, a
     <td align="center"><img src="docs/media/states/success.gif" width="140"><br><b>success</b><br><sub>it worked!</sub></td>
     <td align="center"><img src="docs/media/states/failure.gif" width="140"><br><b>failure</b><br><sub>something broke</sub></td>
     <td align="center"><img src="docs/media/states/sleeping.gif" width="140"><br><b>sleeping</b><br><sub>session over</sub></td>
+    <td align="center"><img src="docs/media/states/praying.gif" width="140"><br><b>praying</b><br><sub>reflecting 🙏</sub></td>
   </tr>
 </table>
 
 ### What each state means — and exactly what triggers it
 
-Khosrow has **one** set of eleven states. What *drives* them is a live signal that can come from **either** source you turn on:
+Khosrow has **one** set of twelve states. What *drives* them is a live signal that can come from **either** source you turn on:
 
 - **Hook bridge** — Claude Code fires a hook on each lifecycle event (`PreToolUse`, `Stop`, `SessionEnd`, …); the bridge maps that event to a state. Precise, immediate, and it can see permission prompts and clean finishes.
 - **Watch mode** — no install: the pet reads Claude Code's own session transcript and *infers* the state from the newest entry. It sees the same tools, but it can't see a permission prompt or a "turn finished cleanly" signal, so **`waitingForPermission` and `success` are hook‑only** — in Watch mode a clean finish simply settles back to **idle**.
@@ -57,6 +58,7 @@ Khosrow has **one** set of eleven states. What *drives* them is a live signal th
 | State | What it means | Fires on — **hook bridge** | Fires on — **Watch mode** |
 |-------|---------------|-----------------------------|----------------------------|
 | 🧍 **idle** | At rest — nothing is running | `SubagentStop` · a quiet gap | ~25 s of transcript quiet |
+| 🙏 **praying** | Reflecting — a first-class mood with **no automatic trigger** | *unassigned by default — drag any hook onto it in Configuration* | *same — or preview it manually* |
 | 🙌 **attentive** | Engaged — a session or sub‑task just started | `SessionStart` · `Task`/`Agent` | a session / sub‑task start |
 | 📝 **writing** | Composing a response to your prompt | `UserPromptSubmit` · `PostToolUse` (between tools) | you sent a prompt (no reply yet), or Claude is writing prose — **held for the whole turn so he never dozes off mid‑answer** |
 | 📖 **reading** | Reading a file | `PreToolUse` · `Read`, `NotebookRead` | those same tools in the transcript |
@@ -159,6 +161,24 @@ python3 bridge/simulate_events.py --scenario session   # a scripted work session
 Full walkthrough → **[INSTALL.md](INSTALL.md)** · on‑Mac visual checklist → **[docs/LOCAL-MAC-VERIFICATION.md](docs/LOCAL-MAC-VERIFICATION.md)**
 
 ---
+
+
+## ⚙️ Configuration
+
+Open **menu bar ▸ Configure Khosrow… (⌘,)** — or re-launch the app from Finder/Spotlight while it's running (the closest supported "app-icon" action for a Dock-less menu-bar app) — for a native settings window with ten sections:
+
+- **General** — visibility, float-on-top, Spaces, click-through, reset position, **Export / Import / Restore Defaults** for the whole configuration (schema-versioned JSON in `~/Library/Application Support/Khosrow/`).
+- **Appearance** — pet **Scale** and interface **Text size** as fully independent sliders, opacity, speed, and visibility toggles for the mood pill, progress ring, unread badge, and notification bubbles.
+- **Mood States** — every mood (built-in and custom) with its stable id, description, live art preview, **any-act-on-any-mood** picker, per-mood notifications, and its current triggers. Praying ships with a friendly "no automatic conditions yet" empty state — by design it has **no invented trigger**.
+- **Visual Acts** — the artwork library: Gemini acts, hand-drawn sequences, and the legacy sprite clips (always recoverable).
+- **Hook & Event Mapping** — every Claude Code condition (`PreToolUse · Read`, `UserPromptSubmit`, `Stop`, …) is a **draggable chip**: drag it between moods (Praying included) or to **Unassigned**, or use its ▾ menu. Changes apply to the live pet immediately and persist.
+- **Rules & Conditions** — explicit overrides with priority, evaluated before the mapping (deterministic: rule → mapping → default; unassigned = the signal is ignored).
+- **Custom Moods** — create/duplicate/delete your own moods safely; built-ins can't be deleted.
+- **Custom Visual Acts** — import PNG/GIF/frame sequences and assign them to any mood; *Generate Visual Act* is provider-ready but honestly disabled until an image provider is configured (manual import is fully functional).
+- **Notifications & Interaction** — bubble/badge/ring toggles, the "waiting" debounce, and a safe status check for the standalone `claude` CLI (separate from Claude Desktop's sign-in).
+- **Advanced & Diagnostics** — live signal status, mood/condition simulators (Praying can be previewed with no rule), reset mappings, diagnostic export.
+
+Privacy note: to make per-tool mapping possible the bridge now sends the tool **name** from a fixed vocabulary (`Read`, `Bash`, … else `Other`) — never arguments, never free-form strings.
 
 ## 🔒 Privacy, in one line
 
