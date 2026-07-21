@@ -124,6 +124,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                 case .moodStates: return ConfigSectionBuilder.moodStates(ctx)
                 case .visualActs: return ConfigSectionBuilder.visualActs(ctx)
                 case .hookMapping: return ConfigHookMappingBuilder.build(ctx)
+                case .rules: return ConfigRulesBuilder.build(ctx)
+                case .customMoods: return ConfigCustomMoodsBuilder.build(ctx)
                 default: return nil     // placeholders until their milestone lands
                 }
             }

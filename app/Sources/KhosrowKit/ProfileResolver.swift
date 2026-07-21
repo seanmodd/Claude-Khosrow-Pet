@@ -53,6 +53,14 @@ public enum ProfileResolver {
     }
 
     /// Resolve a bridge signal through the profile.
+    ///
+    /// Conflict resolution, in order (deterministic):
+    ///   1. an enabled user RULE matching the condition — highest priority
+    ///      wins, ties broken by rule id
+    ///   2. the condition's ASSIGNMENT (the drag-and-drop mapping)
+    ///   3. passthrough (default behaviour)
+    /// An Unassigned condition or a disabled destination mood means IGNORE:
+    /// the signal no longer moves the pet.
     public static func resolve(state: PetState,
                                tool: String?,
                                category: String?,
@@ -61,6 +69,17 @@ public enum ProfileResolver {
               profile.condition(id: condId) != nil else {
             return .passthrough
         }
+        // 1. Explicit user rules beat the drag-and-drop assignment.
+        let matching = profile.rules
+            .filter { $0.enabled && $0.conditionId == condId }
+            .sorted { ($0.priority, $1.id) > ($1.priority, $0.id) }
+        if let rule = matching.first {
+            guard let mood = profile.mood(id: rule.moodId), mood.enabled else {
+                return .ignore
+            }
+            return .mood(rule.moodId)
+        }
+        // 2. The condition's assignment.
         guard let assignment = profile.assignment(conditionId: condId),
               assignment.enabled else {
             return .passthrough

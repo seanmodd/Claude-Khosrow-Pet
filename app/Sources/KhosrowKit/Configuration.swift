@@ -225,6 +225,52 @@ public struct ConfigurationProfile: Codable, Equatable {
         return true
     }
 
+    /// Create a new custom mood with a unique stable id. Returns its id.
+    @discardableResult
+    public mutating func addCustomMood(name: String, description: String,
+                                       visualActId: String? = nil) -> String {
+        let id = "custom-\(UUID().uuidString.prefix(8).lowercased())"
+        let act = visualActId ?? visualActs.first?.id ?? ""
+        moods.append(MoodDefinition(id: id, displayName: name,
+                                    moodDescription: description,
+                                    builtin: false, enabled: true,
+                                    visualActId: act, notifies: false))
+        return id
+    }
+
+    /// Duplicate a mood (built-in or custom) into a NEW custom mood.
+    @discardableResult
+    public mutating func duplicateMood(id: String) -> String? {
+        guard let src = mood(id: id) else { return nil }
+        return addCustomMood(name: src.displayName + " copy",
+                             description: src.moodDescription,
+                             visualActId: src.visualActId)
+    }
+
+    /// Delete a CUSTOM mood safely: its assignments become Unassigned and its
+    /// rules are removed. Built-in moods (praying, writing, …) are refused.
+    @discardableResult
+    public mutating func deleteCustomMood(id: String) -> Bool {
+        guard let m = mood(id: id), !m.builtin else { return false }
+        moods.removeAll { $0.id == id }
+        for i in assignments.indices where assignments[i].moodId == id {
+            assignments[i].moodId = nil
+        }
+        rules.removeAll { $0.moodId == id }
+        return true
+    }
+
+    /// Add a user rule. Returns its id.
+    @discardableResult
+    public mutating func addRule(name: String, conditionId: String, moodId: String,
+                                 priority: Int = 100) -> String? {
+        guard condition(id: conditionId) != nil, mood(id: moodId) != nil else { return nil }
+        let id = "rule-\(UUID().uuidString.prefix(8).lowercased())"
+        rules.append(MoodRule(id: id, name: name, conditionId: conditionId,
+                              moodId: moodId, priority: priority))
+        return id
+    }
+
     /// Validate referential integrity. Returns a list of problems (empty = ok).
     public func validate() -> [String] {
         var problems: [String] = []
