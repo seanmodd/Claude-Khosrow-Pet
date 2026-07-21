@@ -48,13 +48,16 @@ SENTINEL = (255, 0, 255)  # magenta marker for "this is background"
 # on an opaque navy/near-black starfield; crop is a fraction box (l, t, r, b) for
 # the rare case a source needs trimming, else None to use the whole image.
 PLAN = {
-    # mood id     source stem              crop fraction (or None)
-    "attentive": ("Gemini-Khosrow-Attentive", None),  # hand-to-chin, pondering
-    "writing":   ("Gemini-Khosrow-Writing",   None),  # writing in an open book
-    "searching": ("Gemini-Khosrow-Searching", None),
-    "waiting":   ("Gemini-Khosrow-Waiting",   None),
-    "running":   ("Gemini-Khosrow-Running",   None),
-    "praying":   ("Gemini-Khosrow-Praying",   None),
+    # mood id  -> (source stem, crop fraction or None, interior seed fractions)
+    "attentive": ("Gemini-Khosrow-Attentive", None, []),
+    "writing":   ("Gemini-Khosrow-Writing",   None, []),
+    "searching": ("Gemini-Khosrow-Searching", None, []),
+    "waiting":   ("Gemini-Khosrow-Waiting",   None, []),
+    "running":   ("Gemini-Khosrow-Running",   None, []),
+    # Praying: hands raised, so the pockets beside the arms/head are enclosed.
+    "praying":   ("Gemini-Khosrow-Praying",   None,
+                  [(0.28, 0.18), (0.72, 0.18), (0.24, 0.28), (0.76, 0.28),
+                   (0.30, 0.10), (0.70, 0.10)]),
 }
 
 
@@ -78,7 +81,14 @@ def is_navy(p, bg, tol) -> bool:
     return d <= tol
 
 
-def remove_background(im: Image.Image) -> Image.Image:
+def remove_background(im: Image.Image, interior_seeds=None) -> Image.Image:
+    """Non-destructive keying. Border flood-fill removes the outer background
+    (never interior figure pixels, which aren't border-connected). A *very*
+    strict interior pass floods only true-navy enclosed pockets — so tight it
+    can't spread into the blue robe/trousers (the bug that gouged white holes
+    into the tunic). `interior_seeds` are optional per-image (fx, fy) fractions
+    pointing at enclosed background (e.g. the gaps beside Praying's raised arms).
+    """
     im = im.convert("RGB")
     w, h = im.size
     bg = sample_bg(im)
@@ -86,26 +96,32 @@ def remove_background(im: Image.Image) -> Image.Image:
     px = flood.load()
 
     # (a) Dense border seeds — flood the outer background from every edge.
-    step = max(8, min(w, h) // 60)
+    step = max(6, min(w, h) // 90)
     border_pts = []
     for x in range(0, w, step):
-        border_pts.append((x, 0))
-        border_pts.append((x, h - 1))
+        border_pts.append((x, 0)); border_pts.append((x, h - 1))
     for y in range(0, h, step):
-        border_pts.append((0, y))
-        border_pts.append((w - 1, y))
+        border_pts.append((0, y)); border_pts.append((w - 1, y))
     for pt in border_pts:
         if px[pt] != SENTINEL and is_navy(px[pt], bg, tol=70):
-            ImageDraw.floodfill(flood, pt, SENTINEL, thresh=52)
+            ImageDraw.floodfill(flood, pt, SENTINEL, thresh=48)
 
-    # (b) Interior grid pass — flood strictly-navy enclosed pockets (e.g. the
-    #     gaps beside raised arms) that the border pass can't reach.
-    grid = max(10, min(w, h) // 90)
+    # (b) Explicit interior seeds for enclosed pockets (per image). Strict flood.
+    for (fx, fy) in (interior_seeds or []):
+        gx, gy = int(fx * w), int(fy * h)
+        p = px[gx, gy]
+        if p != SENTINEL and is_navy(p, bg, tol=42):
+            ImageDraw.floodfill(flood, (gx, gy), SENTINEL, thresh=30)
+
+    # (c) A conservative auto interior pass: flood only pixels that are *nearly
+    #     identical* to the background (tol 18) with a tight spread (thresh 20),
+    #     so enclosed navy is removed but the darkest robe blues are untouched.
+    grid = max(8, min(w, h) // 120)
     for gy in range(grid, h, grid):
         for gx in range(grid, w, grid):
             p = px[gx, gy]
-            if p != SENTINEL and is_navy(p, bg, tol=34):
-                ImageDraw.floodfill(flood, (gx, gy), SENTINEL, thresh=40)
+            if p != SENTINEL and is_navy(p, bg, tol=18):
+                ImageDraw.floodfill(flood, (gx, gy), SENTINEL, thresh=20)
 
     # Alpha: opaque everywhere except the flooded background.
     alpha = Image.new("L", (w, h), 255)
@@ -116,9 +132,8 @@ def remove_background(im: Image.Image) -> Image.Image:
                 ap[x, y] = 0
 
     alpha = keep_significant_regions(alpha)
-    # Shave the 1px anti-aliased navy halo, then feather the edge a touch.
-    alpha = alpha.filter(ImageFilter.MinFilter(3))
-    alpha = alpha.filter(ImageFilter.GaussianBlur(0.6))
+    # Gentle edge feather only (NO erosion — erosion was eating figure detail).
+    alpha = alpha.filter(ImageFilter.GaussianBlur(0.5))
 
     out = im.convert("RGBA")
     out.putalpha(alpha)
@@ -192,13 +207,13 @@ def downscale(im: Image.Image, max_side=MAX_SIDE) -> Image.Image:
     return im
 
 
-def process(src_path: str, crop_frac) -> Image.Image:
+def process(src_path: str, crop_frac, interior_seeds=None) -> Image.Image:
     im = Image.open(src_path).convert("RGBA")
     if crop_frac:
         w, h = im.size
         l, t, r, b = crop_frac
         im = im.crop((int(l * w), int(t * h), int(r * w), int(b * h)))
-    im = remove_background(im)
+    im = remove_background(im, interior_seeds=interior_seeds)
     im = autotrim(im)
     im = downscale(im)
     return im
@@ -218,11 +233,11 @@ def main():
         out_dir = os.environ.get("KHOSROW_REVIEW_DIR", "/tmp/khosrow-gemini-review")
     os.makedirs(out_dir, exist_ok=True)
 
-    for mood, (stem, crop) in PLAN.items():
+    for mood, (stem, crop, seeds) in PLAN.items():
         src = os.path.join(args.src, stem + ".png")
         if not os.path.exists(src):
             sys.exit(f"Missing source: {src}")
-        out = process(src, crop)
+        out = process(src, crop, interior_seeds=seeds)
         dest = os.path.join(out_dir, f"gemini-{mood}.png")
         out.save(dest)
         print(f"  gemini-{mood:10s} {out.size[0]}x{out.size[1]:<4}  <- {stem}.png"
