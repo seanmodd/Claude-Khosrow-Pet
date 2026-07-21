@@ -73,6 +73,7 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
 
     private func buildLayout() {
         guard let content = window?.contentView else { return }
+        window?.contentMinSize = NSSize(width: 760, height: 480)
 
         sidebar.headerView = nil
         sidebar.rowHeight = 32
@@ -86,33 +87,20 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         sidebarScroll.documentView = sidebar
         sidebarScroll.hasVerticalScroller = true
         sidebarScroll.drawsBackground = false
-        sidebarScroll.translatesAutoresizingMaskIntoConstraints = false
 
-        contentContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        let divider = NSBox()
-        divider.boxType = .separator
-        divider.translatesAutoresizingMaskIntoConstraints = false
+        // Frame-based layout with autoresizing masks — deliberately NOT Auto
+        // Layout at the window level: a constraint chain from the section
+        // content was able to drive the whole window frame to its title bar.
+        // Autoresizing cannot resize a window, only follow it.
+        let bounds = content.bounds
+        sidebarScroll.frame = NSRect(x: 0, y: 0, width: 220, height: bounds.height)
+        sidebarScroll.autoresizingMask = [.height]
+        contentContainer.frame = NSRect(x: 221, y: 0, width: bounds.width - 221,
+                                        height: bounds.height)
+        contentContainer.autoresizingMask = [.width, .height]
 
         content.addSubview(sidebarScroll)
-        content.addSubview(divider)
         content.addSubview(contentContainer)
-        NSLayoutConstraint.activate([
-            sidebarScroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            sidebarScroll.topAnchor.constraint(equalTo: content.topAnchor),
-            sidebarScroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            sidebarScroll.widthAnchor.constraint(equalToConstant: 220),
-
-            divider.leadingAnchor.constraint(equalTo: sidebarScroll.trailingAnchor),
-            divider.topAnchor.constraint(equalTo: content.topAnchor),
-            divider.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
-
-            contentContainer.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
-            contentContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            contentContainer.topAnchor.constraint(equalTo: content.topAnchor),
-            contentContainer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
     }
 
     // MARK: Section switching
@@ -126,14 +114,25 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
         let view = sectionProvider?(section) ?? Self.placeholder(for: section)
         currentSectionView?.removeFromSuperview()
         currentSectionView = view
-        view.translatesAutoresizingMaskIntoConstraints = false
+        view.frame = contentContainer.bounds          // frame-based; see buildLayout
+        view.autoresizingMask = [.width, .height]
         contentContainer.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
-            view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
-        ])
+        restoreFrameIfCollapsed()
+    }
+
+    /// Section content is constraint-heavy; if Auto Layout ever drives the
+    /// window frame toward zero (observed on-screen as a title-bar-only
+    /// window), snap it back. Runs after every render, sync and async.
+    private func restoreFrameIfCollapsed() {
+        func restore() {
+            guard let w = window, w.frame.height < 300 else { return }
+            w.setContentSize(NSSize(width: max(920, w.frame.width), height: 640))
+            if w.frame.origin.y + w.frame.height > (w.screen?.visibleFrame.maxY ?? 10_000) {
+                w.center()
+            }
+        }
+        restore()
+        DispatchQueue.main.async(execute: restore)
     }
 
     /// Standard "coming here" placeholder used until a section's editor ships.
@@ -162,6 +161,10 @@ final class ConfigurationWindowController: NSWindowController, NSWindowDelegate 
 
     /// Open the window (or focus it if already open). Never creates duplicates.
     func show() {
+        if let w = window, w.frame.height < 200 {   // recover a collapsed frame
+            w.setContentSize(NSSize(width: 920, height: 640))
+            w.center()
+        }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

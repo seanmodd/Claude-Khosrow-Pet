@@ -103,6 +103,14 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         configProfile = configStore.load()
         applyProfileArt()
+
+        // Debug/automation hook: open Configuration at a named section on
+        // launch (used by on-screen verification). Env-gated; no UI impact.
+        if let raw = ProcessInfo.processInfo.environment["KHOSROW_OPEN_CONFIG_SECTION"],
+           let section = ConfigSection(rawValue: raw) {
+            openConfiguration()
+            configWindow?.select(section: section)
+        }
     }
 
     /// Re-activating the app (e.g. launching it again from Finder/Spotlight —
@@ -136,6 +144,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
             configWindow = c
         }
+        // Re-render the current section: the initial render can predate the
+        // section provider (placeholder), and the model may have changed.
+        if let c = configWindow { c.select(section: c.currentSection) }
         configWindow?.show()
     }
 
