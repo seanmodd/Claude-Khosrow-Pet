@@ -140,12 +140,12 @@ def erase_grid_lines(cell: Image.Image, alpha: Image.Image) -> Image.Image:
                     run_px.append((x, y))
                 else:
                     if len(run_px) >= minrun:
-                        # measure thickness at several points along the run
-                        samples = run_px[:: max(1, len(run_px) // 8)]
-                        maxth = max(thin_at(sx, sy, vertical=not horizontal)
-                                    for (sx, sy) in samples)
-                        if maxth <= 6:
-                            for (px_, py_) in run_px:
+                        # Per-pixel: erase only where the dark region is locally
+                        # thin. A border line that CROSSES the figure still gets
+                        # erased on its thin stretches while the figure (locally
+                        # thick) is untouched.
+                        for (px_, py_) in run_px:
+                            if thin_at(px_, py_, vertical=not horizontal) <= 6:
                                 for d in (-2, -1, 0, 1, 2):
                                     xx = px_ if horizontal else px_ + d
                                     yy = py_ + d if horizontal else py_
@@ -154,7 +154,7 @@ def erase_grid_lines(cell: Image.Image, alpha: Image.Image) -> Image.Image:
                     run_px = []
 
     sweep(horizontal=True)
-    sweep(horizontal=False)
+    sweep(horizontal=False, minrun=24)   # vertical border stubs are shorter
     return alpha
 
 
@@ -191,6 +191,12 @@ def keep_significant(alpha: Image.Image, rel=0.02, absmin=120) -> Image.Image:
         thin, long_ = min(bw, bh), max(bw, bh)
         if long_ > 6 * thin and thin <= 14:
             continue          # a stray grid border line, not figure
+        # Detached debris from a neighbouring cell: a blob living entirely in
+        # the top sliver (their boots) or the bottom sliver (their crown or a
+        # floor-reflection ghost) of this cell, never touching the middle band
+        # where the figure always lives.
+        if max(ys) < h * 0.22 or min(ys) > h * 0.85:
+            continue
         keep.update(c)
     out = Image.new("L", (w, h), 0)
     op = out.load()

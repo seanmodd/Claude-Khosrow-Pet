@@ -56,6 +56,12 @@ let package = Package(
                 .copy("Resources/khosrow-runningCommand-5.png"),
                 .copy("Resources/khosrow-runningCommand-6.png"),
                 .copy("Resources/khosrow-runningCommand-7.png"),
+                .copy("Resources/khosrow-attentive-1.png"),
+                .copy("Resources/khosrow-attentive-2.png"),
+                .copy("Resources/khosrow-attentive-3.png"),
+                .copy("Resources/khosrow-attentive-4.png"),
+                .copy("Resources/khosrow-attentive-5.png"),
+                .copy("Resources/khosrow-attentive-6.png"),
                 // Gemini illustrated single-image "visual acts" (transparent
                 // cut-outs of one pose each), imported by
                 // scripts/import_gemini_acts.py and shown for their mood.
