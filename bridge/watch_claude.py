@@ -59,6 +59,15 @@ def state_for(cat: str | None) -> str:
     return _STATE_FOR_CATEGORY.get(cat or "other", "attentive")
 
 
+def vocab_tool(tool: str | None) -> "str | None":
+    """Tool name limited to the FIXED vocabulary (else "Other"), never free-form.
+    Lets the app's configurable per-tool mood mapping distinguish tools without
+    ever emitting an arbitrary (potentially sensitive) string."""
+    if not tool:
+        return None
+    return tool if tool in _CATEGORY else "Other"
+
+
 def iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -175,9 +184,9 @@ def derive(entry: dict, want_detail: bool):
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 cat = category(block.get("name"))
                 det = detail_for(block.get("name"), block.get("input")) if want_detail else None
-                return (state_for(cat), cat, None, det)
+                return (state_for(cat), cat, None, det, vocab_tool(block.get("name")))
         if any(isinstance(b, dict) and b.get("type") == "text" for b in content):
-            return ("writing", None, None, None)               # composing prose = writing
+            return ("writing", None, None, None, None)         # composing prose = writing
         return None
 
     if role == "user":
@@ -185,16 +194,16 @@ def derive(entry: dict, want_detail: bool):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
                     if block.get("is_error") is True:
-                        return ("failure", "other", False, "error" if want_detail else None)
+                        return ("failure", "other", False, "error" if want_detail else None, None)
                     return None                                # finished ok; keep working state
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
                     snippet = (block.get("text") or "").strip().replace("\n", " ")
-                    return ("writing", None, None, snippet[:80] or None if want_detail else None)
+                    return ("writing", None, None, snippet[:80] or None if want_detail else None, None)
             return None
         if isinstance(content, str):                           # plain-string prompt
             snippet = content.strip().replace("\n", " ")
-            return ("writing", None, None, snippet[:80] or None if want_detail else None)
+            return ("writing", None, None, snippet[:80] or None if want_detail else None, None)
     return None
 
 
@@ -242,8 +251,10 @@ def last_entry_kind(path: str) -> "str | None":
     return kind
 
 
-def build_payload(state, cat, success, detail, session=None, session_label=None):
+def build_payload(state, cat, success, detail, tool=None, session=None, session_label=None):
     payload = {"state": state, "toolCategory": cat, "timestamp": iso_now(), "success": success}
+    if tool:
+        payload["tool"] = tool
     if detail:
         payload["detail"] = detail
     if session:
@@ -375,17 +386,17 @@ def run(args):
         if derived is not None:
             new_state = derived
         elif tail_kind == "user_prompt":             # your prompt, no reply yet
-            new_state = ("writing", None, None, None)
+            new_state = ("writing", None, None, None, None)
             last_activity = monotonic                # turn in progress; stay awake
         elif tail_kind == "tool_use":                # a tool is still running
             last_activity = monotonic                # stay awake; hold current state
             new_state = None
         elif monotonic - last_activity > sleep_after:
-            new_state = ("sleeping", None, None, None)
+            new_state = ("sleeping", None, None, None, None)
         elif tail_kind == "tool_result":             # tool done; composing next step
-            new_state = ("writing", None, None, None)
+            new_state = ("writing", None, None, None, None)
         elif monotonic - last_activity > idle_after:
-            new_state = ("idle", None, None, None)
+            new_state = ("idle", None, None, None, None)
         else:
             new_state = None
 
@@ -427,7 +438,7 @@ def main() -> int:
                 if args.session and args.session != "auto" else newest_transcript())
         if not path:
             print("no transcripts found under", PROJECTS_DIR, file=sys.stderr); return 1
-        derived = scan_tail(path, args.detail) or ("idle", None, None, None)
+        derived = scan_tail(path, args.detail) or ("idle", None, None, None, None)
         meta = session_meta(path, allow_prompt=args.detail)
         print(json.dumps({"transcript": os.path.basename(path),
                           **build_payload(*derived, session=meta["id"], session_label=meta["label"])}))

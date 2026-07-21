@@ -7,6 +7,11 @@ import Foundation
 public struct PetBridgeState: Codable, Equatable {
     public let state: String
     public let toolCategory: String?
+    /// The tool's NAME from the fixed Claude Code vocabulary ("Read", "Bash",
+    /// …, or "Other" for MCP/unknown tools). Never carries arguments. Lets the
+    /// configurable per-tool mood mapping distinguish e.g. Read from
+    /// NotebookRead, which the coarse category cannot.
+    public let tool: String?
     public let timestamp: String   // ISO-8601
     public let success: Bool?
     /// Optional, opt-in "what": a file name, command, or prompt snippet. Only
@@ -17,11 +22,12 @@ public struct PetBridgeState: Codable, Equatable {
     /// A short human label for that session (title or project), for the UI.
     public let sessionLabel: String?
 
-    public init(state: String, toolCategory: String? = nil,
+    public init(state: String, toolCategory: String? = nil, tool: String? = nil,
                 timestamp: String, success: Bool? = nil, detail: String? = nil,
                 session: String? = nil, sessionLabel: String? = nil) {
         self.state = state
         self.toolCategory = toolCategory
+        self.tool = tool
         self.timestamp = timestamp
         self.success = success
         self.detail = detail
@@ -29,11 +35,12 @@ public struct PetBridgeState: Codable, Equatable {
         self.sessionLabel = sessionLabel
     }
 
-    public init(state: PetState, toolCategory: ToolCategory? = nil,
+    public init(state: PetState, toolCategory: ToolCategory? = nil, tool: String? = nil,
                 timestamp: String, success: Bool? = nil, detail: String? = nil,
                 session: String? = nil, sessionLabel: String? = nil) {
         self.init(state: state.rawValue,
                   toolCategory: toolCategory?.rawValue,
+                  tool: tool,
                   timestamp: timestamp,
                   success: success, detail: detail,
                   session: session, sessionLabel: sessionLabel)

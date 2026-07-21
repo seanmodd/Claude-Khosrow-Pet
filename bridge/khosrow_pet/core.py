@@ -53,6 +53,19 @@ def categorize(tool_name: str | None) -> str:
     return _TOOL_CATEGORY.get(tool_name, "other")
 
 
+def vocab_tool(tool_name: str | None) -> str | None:
+    """The tool name reduced to the FIXED vocabulary, or "Other".
+
+    Only names from the known table are ever emitted — an MCP server's tool
+    name (which could embed anything) never leaves the process. This powers the
+    app's per-tool mood mapping (e.g. Read vs NotebookRead) without weakening
+    the privacy contract: it's a closed enum, not a free-form string.
+    """
+    if not tool_name:
+        return None
+    return tool_name if tool_name in _TOOL_CATEGORY else "Other"
+
+
 # ---------------------------------------------------------------------------
 # Tool category -> working state (mirrors StateMapper.stateForTool)
 # ---------------------------------------------------------------------------
@@ -147,7 +160,8 @@ def redact(hook_input: dict, event_override: str | None = None) -> dict:
     tool_name = hook_input.get("tool_name")
     category = categorize(tool_name) if tool_name else None
     success = _extract_success(hook_input)
-    return {"event": str(event), "category": category, "success": success}
+    return {"event": str(event), "category": category, "success": success,
+            "tool": vocab_tool(tool_name)}
 
 
 # ---------------------------------------------------------------------------
@@ -158,14 +172,20 @@ def iso_now() -> str:
 
 
 def build_payload(state: str, category: str | None, success: bool | None,
-                  timestamp: str | None = None) -> dict:
-    """Construct the ENTIRE allowed payload — nothing else is ever added."""
+                  timestamp: str | None = None, tool: str | None = None) -> dict:
+    """Construct the ENTIRE allowed payload — nothing else is ever added.
+
+    ``tool`` is the vocabulary-limited tool name from :func:`vocab_tool` (never
+    a free-form string), used by the app's configurable per-tool mood mapping.
+    """
     payload: dict = {
         "state": state,
         "toolCategory": category,
         "timestamp": timestamp or iso_now(),
         "success": success,
     }
+    if tool:
+        payload["tool"] = tool
     return payload
 
 

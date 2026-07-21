@@ -60,11 +60,16 @@ class RedactionTests(unittest.TestCase):
 
     def test_redact_returns_only_coarse_triple(self):
         safe = core.redact(SENSITIVE)
-        self.assertEqual(set(safe.keys()), {"event", "category", "success"})
+        self.assertEqual(set(safe.keys()), {"event", "category", "success", "tool"})
         self.assertEqual(safe["event"], "PreToolUse")
         self.assertEqual(safe["category"], "command")  # Bash -> command
-        # tool_name was used only to bucket; the raw name is not present.
-        self.assertNotIn("Bash", json.dumps(safe))
+        # Known-vocabulary tool names may pass through as `tool` (a closed
+        # enum, needed for per-tool mood mapping) — but NEVER a free-form name:
+        self.assertEqual(safe["tool"], "Bash")
+        mcp = core.redact({"hook_event_name": "PreToolUse",
+                           "tool_name": "mcp__secret_server__reveal_password"})
+        self.assertEqual(mcp["tool"], "Other")
+        self.assertNotIn("secret_server", json.dumps(mcp))
 
     def test_tool_category_is_coarse_not_raw_name(self):
         payload = self._payload_for(SENSITIVE)

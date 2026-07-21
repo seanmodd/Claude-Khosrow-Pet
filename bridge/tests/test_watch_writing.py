@@ -53,7 +53,7 @@ class EntryKindTests(unittest.TestCase):
 
 class DeriveWritingTests(unittest.TestCase):
     def test_user_prompt_is_writing(self):
-        state, cat, success, detail = wc.derive(_user_prompt(), want_detail=False)
+        state, cat, success, detail, tool = wc.derive(_user_prompt(), want_detail=False)
         self.assertEqual(state, "writing")
 
     def test_plain_string_prompt_is_writing(self):

@@ -53,7 +53,8 @@ def main() -> int:
 
     safe = core.redact(hook_input, event_override=args.event)
     state = core.map_state(safe["event"], safe["category"], safe["success"])
-    payload = core.build_payload(state, safe["category"], safe["success"])
+    payload = core.build_payload(state, safe["category"], safe["success"],
+                                 tool=safe.get("tool"))
 
     core.emit(payload, http_port=None if args.no_http else args.http_port)
     return 0

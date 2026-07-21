@@ -123,6 +123,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 case .appearance: return ConfigSectionBuilder.appearance(ctx)
                 case .moodStates: return ConfigSectionBuilder.moodStates(ctx)
                 case .visualActs: return ConfigSectionBuilder.visualActs(ctx)
+                case .hookMapping: return ConfigHookMappingBuilder.build(ctx)
                 default: return nil     // placeholders until their milestone lands
                 }
             }
@@ -971,7 +972,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         lastBridge = payload
         guard prefs.followBridge else { return }
         guard let state = payload.petState else { return }
-        controller.apply(state: state)
+        // Route through the user's configurable condition->mood mapping.
+        switch ProfileResolver.resolve(state: state, tool: payload.tool,
+                                       category: payload.toolCategory,
+                                       profile: configProfile) {
+        case .mood(let id):
+            controller.apply(state: PetState(rawValue: id) ?? state)
+        case .ignore:
+            break                       // condition unassigned/disabled: no change
+        case .passthrough:
+            controller.apply(state: state)
+        }
         updateMenuChecks()
     }
 
