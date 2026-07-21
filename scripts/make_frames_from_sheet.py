@@ -70,6 +70,7 @@ def key_cell(cell: Image.Image) -> Image.Image:
             if is_magenta(px[x, y], ref):
                 ap[x, y] = 0
     alpha = keep_significant(alpha)
+    alpha = erase_grid_lines(cell, alpha)
     alpha = alpha.filter(ImageFilter.GaussianBlur(0.4))
     out = cell.convert("RGBA")
     out.putalpha(alpha)
@@ -77,8 +78,9 @@ def key_cell(cell: Image.Image) -> Image.Image:
 
 
 def despill(im: Image.Image) -> Image.Image:
-    """Soften residual magenta fringe on edge pixels: pull excess red/blue
-    (over green) down on semi-transparent or boundary pixels."""
+    """Remove the magenta halo: strongly magenta-cast pixels that touch
+    transparency are background blend — make them transparent; milder casts
+    get neutralized toward their green level."""
     px = im.load()
     w, h = im.size
     for y in range(h):
@@ -86,13 +88,74 @@ def despill(im: Image.Image) -> Image.Image:
             r, g, b, a = px[x, y]
             if a == 0:
                 continue
-            if r > 150 and b > 150 and g < 120:
-                # magenta-cast pixel on the edge: neutralize toward its green level
-                m = (r + b) // 2
-                excess = m - g
-                if excess > 40:
-                    px[x, y] = (max(0, r - excess // 2), g, max(0, b - excess // 2), a)
+            cast = (r + b) // 2 - g
+            if cast <= 40:
+                continue
+            edge = any(
+                0 <= nx < w and 0 <= ny < h and px[nx, ny][3] == 0
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
+                               (x + 1, y + 1), (x - 1, y - 1), (x + 1, y - 1), (x - 1, y + 1)))
+            if edge and cast > 90 and r > 120 and b > 110:
+                px[x, y] = (0, 0, 0, 0)          # halo pixel: kill it
+            else:
+                px[x, y] = (max(0, r - cast // 2), g, max(0, b - cast // 2), a)
     return im
+
+
+def erase_grid_lines(cell: Image.Image, alpha: Image.Image) -> Image.Image:
+    """Erase grid-border remnants AND generator "speed-line" streaks: dark
+    horizontal (or vertical) runs that are long but vertically THIN. Thickness
+    is checked before erasing, so broad dark areas like the cape are safe —
+    only runs whose dark region is <= ~6px thick get removed."""
+    w, h = cell.size
+    cp = cell.load()
+    ap = alpha.load()
+
+    def dark(x, y):
+        r, g, b = cp[x, y][:3]
+        return r < 105 and g < 85 and b < 150 and (r + g + b) < 300
+
+    def thin_at(x, y, vertical=False, limit=7):
+        """Thickness of the dark region crossing (x, y) perpendicular to the run."""
+        n = 1
+        if vertical:
+            i = x - 1
+            while i >= 0 and dark(i, y) and n <= limit: n += 1; i -= 1
+            i = x + 1
+            while i < w and dark(i, y) and n <= limit: n += 1; i += 1
+        else:
+            i = y - 1
+            while i >= 0 and dark(x, i) and n <= limit: n += 1; i -= 1
+            i = y + 1
+            while i < h and dark(x, i) and n <= limit: n += 1; i += 1
+        return n
+
+    def sweep(horizontal=True, minrun=45):
+        outer, inner = (h, w) if horizontal else (w, h)
+        for o in range(outer):
+            run_px = []
+            for i in range(inner + 1):
+                x, y = (i, o) if horizontal else (o, i)
+                if i < inner and ap[x, y] > 0 and dark(x, y):
+                    run_px.append((x, y))
+                else:
+                    if len(run_px) >= minrun:
+                        # measure thickness at several points along the run
+                        samples = run_px[:: max(1, len(run_px) // 8)]
+                        maxth = max(thin_at(sx, sy, vertical=not horizontal)
+                                    for (sx, sy) in samples)
+                        if maxth <= 6:
+                            for (px_, py_) in run_px:
+                                for d in (-2, -1, 0, 1, 2):
+                                    xx = px_ if horizontal else px_ + d
+                                    yy = py_ + d if horizontal else py_
+                                    if 0 <= xx < w and 0 <= yy < h and ap[xx, yy] > 0 and dark(xx, yy):
+                                        ap[xx, yy] = 0
+                    run_px = []
+
+    sweep(horizontal=True)
+    sweep(horizontal=False)
+    return alpha
 
 
 def keep_significant(alpha: Image.Image, rel=0.02, absmin=120) -> Image.Image:
@@ -121,8 +184,14 @@ def keep_significant(alpha: Image.Image, rel=0.02, absmin=120) -> Image.Image:
     thr = max(absmin, int(rel * largest))
     keep = set()
     for c in comps:
-        if len(c) >= thr:
-            keep.update(c)
+        if len(c) < thr:
+            continue
+        xs = [p[0] for p in c]; ys = [p[1] for p in c]
+        bw = max(xs) - min(xs) + 1; bh = max(ys) - min(ys) + 1
+        thin, long_ = min(bw, bh), max(bw, bh)
+        if long_ > 6 * thin and thin <= 14:
+            continue          # a stray grid border line, not figure
+        keep.update(c)
     out = Image.new("L", (w, h), 0)
     op = out.load()
     for (x, y) in keep:
@@ -143,12 +212,123 @@ def checker(w, h, sq=12):
     return im
 
 
+def is_contentish(p, ref) -> bool:
+    """A pixel that belongs to the figure: not background magenta, not a
+    near-black grid border line."""
+    r, g, b = p[0], p[1], p[2]
+    if is_magenta(p, ref):
+        return False
+    if r < 55 and g < 55 and b < 55:      # grid border / black line
+        return False
+    return True
+
+
+def auto_cells(sheet: Image.Image):
+    """Find frame cells in an *irregular* grid by recursively splitting on
+    content-free gutters (magenta background or border lines), alternating
+    axes. Thin bridges (a tail wisp crossing a border) are tolerated: any
+    row/column whose figure coverage is under ~4%% of the span counts as a
+    gutter."""
+    w, h = sheet.size
+    px = sheet.load()
+    ref = cell_ref_color(sheet)
+
+    def bands(counts, span, minrun):
+        thr = max(2, int(span * 0.04))     # tolerate thin bridges
+        spans, start = [], None
+        for i, n in enumerate(counts):
+            if n > thr:
+                if start is None:
+                    start = i
+            else:
+                if start is not None:
+                    if i - start >= minrun:
+                        spans.append((start, i))
+                    start = None
+        if start is not None and len(counts) - start >= minrun:
+            spans.append((start, len(counts)))
+        # Grow each band over adjacent low-count rows that still hold content
+        # (a narrow crown or hoof the bridge threshold would otherwise eat).
+        # Growth stops at truly-empty lines and is capped so bands never merge.
+        grown = []
+        n = len(counts)
+        for (s, e) in spans:
+            cap = max(6, int((e - s) * 0.8))
+            gs, ge = s, e
+            steps = 0
+            while gs > 0 and counts[gs - 1] > 0 and steps < cap:
+                gs -= 1; steps += 1
+            steps = 0
+            while ge < n and counts[ge] > 0 and steps < cap:
+                ge += 1; steps += 1
+            grown.append((gs, ge))
+        # Clamp overlaps introduced by growth.
+        for i in range(1, len(grown)):
+            if grown[i][0] < grown[i - 1][1]:
+                mid = (grown[i - 1][1] + grown[i][0]) // 2
+                grown[i - 1] = (grown[i - 1][0], mid)
+                grown[i] = (mid, grown[i][1])
+        return grown
+
+    def split(box, axis, depth):
+        l, t, r_, b = box
+        if depth > 4:
+            return [box]
+        if axis == "y":
+            counts = [sum(1 for x in range(l, r_, 2) if is_contentish(px[x, y], ref))
+                      for y in range(t, b)]
+            found = bands(counts, r_ - l, minrun=max(12, (b - t) // 25))
+            boxes = [(l, t + s, r_, t + e) for (s, e) in found]
+        else:
+            counts = [sum(1 for y in range(t, b, 2) if is_contentish(px[x, y], ref))
+                      for x in range(l, r_)]
+            found = bands(counts, b - t, minrun=max(12, (r_ - l) // 25))
+            boxes = [(l + s, t, l + e, b) for (s, e) in found]
+        if len(boxes) <= 1:
+            # no split on this axis: try the other once, else this IS a cell
+            if depth % 2 == 0 or len(boxes) == 1:
+                other = "x" if axis == "y" else "y"
+                sub = split(boxes[0] if boxes else box, other, depth + 1)
+                return sub
+            return [box]
+        out = []
+        for bx in boxes:
+            out.extend(split(bx, "x" if axis == "y" else "y", depth + 1))
+        return out
+
+    cells = split((0, 0, w, h), "y", 0)
+    # sort reading order: by row band (top), then x
+    cells.sort(key=lambda c: (round(c[1] / max(1, h * 0.08)), c[0]))
+
+    # Merge fragments: cells in the same row band separated by a sliver gap
+    # (< 2.5% of sheet width) are parts of ONE frame that a magenta crack split.
+    merged = []
+    for c in cells:
+        if merged:
+            p = merged[-1]
+            same_band = abs(p[1] - c[1]) < h * 0.12 or abs(p[3] - c[3]) < h * 0.12
+            if same_band and c[0] - p[2] < w * 0.025:   # sliver gap OR overlap
+                merged[-1] = (p[0], min(p[1], c[1]), c[2], max(p[3], c[3]))
+                continue
+        merged.append(c)
+    # Drop residual specks (well under half the median area).
+    areas = sorted((c[2] - c[0]) * (c[3] - c[1]) for c in merged)
+    med = areas[len(areas) // 2]
+    return [c for c in merged if (c[2] - c[0]) * (c[3] - c[1]) >= med * 0.35]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sheet")
     ap.add_argument("--mood", required=True)
     ap.add_argument("--rows", type=int, default=2)
     ap.add_argument("--cols", type=int, default=3)
+    ap.add_argument("--auto", action="store_true",
+                    help="auto-detect cells from content gaps (handles irregular grids)")
+    ap.add_argument("--cells", default="",
+                    help="explicit cell boxes as JSON [[l,t,r,b],...] (overrides --auto/--rows/--cols)")
+    ap.add_argument("--flip", default="",
+                    help="comma list of 1-based frame indices to mirror horizontally")
     ap.add_argument("--fps", type=float, default=6)
     ap.add_argument("--inset", type=float, default=0.015,
                     help="fraction of each cell trimmed on every side (grid borders)")
@@ -158,31 +338,63 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     sheet = Image.open(args.sheet).convert("RGB")
     W, H = sheet.size
-    cw, ch = W / args.cols, H / args.rows
 
     frames = []
-    for r in range(args.rows):
-        for c in range(args.cols):
-            ix, iy = int(cw * args.inset) , int(ch * args.inset)
-            box = (int(c * cw) + ix, int(r * ch) + iy,
-                   int((c + 1) * cw) - ix, int((r + 1) * ch) - iy)
+    if args.cells:
+        import json as _json
+        pad = 4
+        for (l, t, r_, b) in _json.loads(args.cells):
+            box = (max(0, l - pad), max(0, t - pad), min(W, r_ + pad), min(H, b + pad))
             frames.append(key_cell(sheet.crop(box)))
+    elif args.auto:
+        cells = auto_cells(sheet)
+        print(f"auto-detected {len(cells)} cells: {cells}")
+        pad = 4
+        for (l, t, r_, b) in cells:
+            box = (max(0, l - pad), max(0, t - pad), min(W, r_ + pad), min(H, b + pad))
+            frames.append(key_cell(sheet.crop(box)))
+    else:
+        cw, ch = W / args.cols, H / args.rows
+        for r in range(args.rows):
+            for c in range(args.cols):
+                ix, iy = int(cw * args.inset), int(ch * args.inset)
+                box = (int(c * cw) + ix, int(r * ch) + iy,
+                       int((c + 1) * cw) - ix, int((r + 1) * ch) - iy)
+                frames.append(key_cell(sheet.crop(box)))
 
-    # Union bbox across all frames -> one steady canvas.
-    boxes = [f.getbbox() for f in frames if f.getbbox()]
-    if not boxes:
-        sys.exit("No content found after keying")
-    l = min(b[0] for b in boxes); t = min(b[1] for b in boxes)
-    r_ = max(b[2] for b in boxes); btm = max(b[3] for b in boxes)
-    mw, mh = int((r_ - l) * 0.02), int((btm - t) * 0.02)
-    l = max(0, l - mw); t = max(0, t - mh)
-    r_ = min(frames[0].width, r_ + mw); btm = min(frames[0].height, btm + mh)
+    flips = {int(i) for i in args.flip.split(",") if i.strip().isdigit()}
+    if flips:
+        frames = [f.transpose(Image.FLIP_LEFT_RIGHT) if (i + 1) in flips else f
+                  for i, f in enumerate(frames)]
 
+    # Crop each frame to its own content, then normalize sizes: cells from an
+    # irregular grid are often drawn at different scales, so we rescale every
+    # frame so its primary content dimension matches the median frame (capped
+    # at ±35% correction; the primary axis is whichever the subject is longer
+    # in — width for the horse, height for a standing figure).
+    frames = [f.crop(f.getbbox()) if f.getbbox() else f for f in frames]
+    ws = sorted(f.width for f in frames)
+    hs = sorted(f.height for f in frames)
+    med_w, med_h = ws[len(ws) // 2], hs[len(hs) // 2]
+    primary_is_width = med_w >= med_h
+    norm = []
+    for f in frames:
+        cur = f.width if primary_is_width else f.height
+        target = med_w if primary_is_width else med_h
+        s = max(0.65, min(1.35, target / max(1, cur)))
+        if abs(s - 1) > 0.02:
+            f = f.resize((max(1, round(f.width * s)), max(1, round(f.height * s))), Image.LANCZOS)
+        norm.append(f)
+    frames = norm
+
+    # One steady output canvas: fit the largest normalized frame, then place
+    # every frame bottom-centered at a SHARED scale (no per-frame zoom jitter).
+    max_w = max(f.width for f in frames)
+    max_h = max(f.height for f in frames)
+    shared = min(CANVAS_W / max_w, CANVAS_H / max_h)
     outs = []
     for i, f in enumerate(frames, 1):
-        f = f.crop((l, t, r_, btm))
-        s = min(CANVAS_W / f.width, CANVAS_H / f.height)
-        nw, nh = max(1, round(f.width * s)), max(1, round(f.height * s))
+        nw, nh = max(1, round(f.width * shared)), max(1, round(f.height * shared))
         f = f.resize((nw, nh), Image.LANCZOS)
         canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0))
         canvas.paste(f, ((CANVAS_W - nw) // 2, CANVAS_H - nh), f)   # bottom-center
