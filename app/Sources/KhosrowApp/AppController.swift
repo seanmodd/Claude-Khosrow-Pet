@@ -115,9 +115,141 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc func openConfiguration() {
         if configWindow == nil {
             let c = ConfigurationWindowController()
+            c.sectionProvider = { [weak self] section in
+                guard let self else { return nil }
+                let ctx = self.makeConfigContext()
+                switch section {
+                case .general: return ConfigSectionBuilder.general(ctx)
+                case .appearance: return ConfigSectionBuilder.appearance(ctx)
+                case .moodStates: return ConfigSectionBuilder.moodStates(ctx)
+                case .visualActs: return ConfigSectionBuilder.visualActs(ctx)
+                default: return nil     // placeholders until their milestone lands
+                }
+            }
             configWindow = c
         }
         configWindow?.show()
+    }
+
+    /// Everything the Configuration sections read/write, bundled up.
+    private func makeConfigContext() -> ConfigContext {
+        ConfigContext(
+            profile: { [weak self] in self?.configProfile ?? .builtInDefault() },
+            updateProfile: { [weak self] mutate in
+                guard let self else { return }
+                mutate(&self.configProfile)
+                try? self.configStore.save(self.configProfile)
+                self.configProfile = self.configStore.load()   // reconciled copy
+                self.updateMood()                              // pill text may change
+                self.refreshConfigSection()
+            },
+            prefs: { [weak self] in self?.prefs ?? Preferences() },
+            updatePrefs: { [weak self] mutate in
+                guard let self else { return }
+                mutate(&self.prefs)
+                self.prefs = self.prefs.clamped()
+                self.applyPrefsSideEffects()
+                self.store.save(self.prefs)
+                self.rebuildMenu()
+            },
+            resetPetPosition: { [weak self] in self?.resetPosition() },
+            exportConfiguration: { [weak self] in self?.exportConfiguration() },
+            importConfiguration: { [weak self] in self?.importConfiguration() },
+            resetAllConfiguration: { [weak self] in self?.confirmResetConfiguration() },
+            previewMood: { [weak self] id in
+                guard let self, let state = PetState(rawValue: id) else { return }
+                // Non-destructive: shows now; the next live signal supersedes it.
+                self.controller.apply(state: state)
+            },
+            actPreview: { [weak self] id in self?.previewImage(forAct: id) },
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+    }
+
+    /// Apply every preference that has a live visual effect (used by the
+    /// Configuration window so changes show immediately).
+    private func applyPrefsSideEffects() {
+        controller.speedMultiplier = prefs.speedMultiplier
+        controller.setBaseOpacity(CGFloat(prefs.opacity))
+        controller.setPaused(prefs.paused)
+        window.setClickThrough(prefs.clickThrough)
+        window.applyLevel(floatOnTop: prefs.floatOnTop)
+        window.applySpaces(showOnAllSpaces: prefs.showOnAllSpaces)
+        applyScale()                 // covers scale changes (keeps center, re-lays out)
+        applyUIFontScale()           // covers text-size changes
+        pill.isHidden = !prefs.showMoodPill
+        if !prefs.showProgressRing { progressRing.isHidden = true }
+        if !prefs.showUnreadBadge { badge.isHidden = true } else if unread > 0 { badge.isHidden = false }
+        if prefs.showPet { window.orderFront(nil) } else { window.orderOut(nil) }
+    }
+
+    /// Re-render the currently visible Configuration section (model changed).
+    private func refreshConfigSection() {
+        guard let c = configWindow, c.window?.isVisible == true else { return }
+        c.select(section: c.currentSection)
+    }
+
+    /// A preview image for a visual act (used by Mood States / Visual Acts).
+    private func previewImage(forAct id: String) -> NSImage? {
+        guard let act = configProfile.visualAct(id: id) else { return nil }
+        switch act.source {
+        case .geminiStill(let name):
+            guard let url = KhosrowResources.geminiActURL(named: name) else { return nil }
+            return NSImage(contentsOf: url)
+        case .frameSequence(let name):
+            guard let url = KhosrowResources.customFrameURLs(forState: name).first else { return nil }
+            return NSImage(contentsOf: url)
+        case .spriteClip(let clipId):
+            guard let clip = manifest.clips[clipId],
+                  let cg = sheet.frame(row: clip.row, index: 0) else { return nil }
+            return NSImage(cgImage: cg, size: .zero)
+        case .customFrames:
+            return nil    // arrives with custom visual acts (M8)
+        }
+    }
+
+    // MARK: Configuration import / export / reset
+
+    private func exportConfiguration() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "khosrow-configuration.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try configStore.export(configProfile, to: url) }
+        catch { presentConfigError("Export failed: \(error)") }
+    }
+
+    private func importConfiguration() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            configProfile = try configStore.importProfile(from: url)
+            try configStore.save(configProfile)
+            updateMood()
+            refreshConfigSection()
+        } catch { presentConfigError("That file isn't a valid Khosrow configuration.") }
+    }
+
+    private func confirmResetConfiguration() {
+        let alert = NSAlert()
+        alert.messageText = "Restore default configuration?"
+        alert.informativeText = "Moods, visual-act assignments, hook mappings, and rules return to the shipped defaults. Preferences like scale and position are kept. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Restore Defaults")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        configProfile = configStore.resetAll()
+        updateMood()
+        refreshConfigSection()
+    }
+
+    private func presentConfigError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Khosrow"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     // MARK: Sizing
@@ -170,7 +302,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func startTurn() {
         turnStart = ProcessInfo.processInfo.systemUptime
-        progressRing.isHidden = false
+        progressRing.isHidden = !prefs.showProgressRing
         layoutProgressRing()
         ringTimer?.invalidate()
         let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.tickRing() }
@@ -237,11 +369,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         .praying: "🙏 praying",
         .success: "🎉 success", .failure: "🙇 failure", .sleeping: "😴 sleeping",
     ]
-    private func pillText(_ s: PetState) -> String { Self.pillLabels[s] ?? s.rawValue }
+    private func pillText(_ s: PetState) -> String {
+        // A custom pill label from Configuration wins; else the built-in emoji.
+        if let custom = configProfile.mood(id: s.rawValue)?.pillText, !custom.isEmpty {
+            return custom
+        }
+        return Self.pillLabels[s] ?? s.rawValue
+    }
 
     /// Refresh the pill's label + position for the current mood, and the popup if open.
     private func updateMood() {
         let state = controller.state
+        pill.isHidden = !prefs.showMoodPill
         pill.set(text: pillText(state), scale: CGFloat(prefs.uiFontScale))
         let sz = pill.pillSize
         let band = pillBandHeight()
@@ -360,6 +499,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// and never leave a stale one up once he resumes.
     private func maybeNotify(from old: PetState?, to new: PetState) {
         guard prefs.followBridge else { return }        // only for live, automatic transitions
+        guard prefs.showNotificationBubbles else { return }
+        // Per-mood notification toggle from Configuration ▸ Mood States.
+        if configProfile.mood(id: new.rawValue)?.notifies == false { return }
         let active: Set<PetState> = [.writing, .reading, .searching, .editing, .runningCommand, .attentive]
         // Resumed working → cancel any pending "waiting" and drop a stale bubble.
         if active.contains(new) {
@@ -425,7 +567,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func setUnread(_ n: Int) {
         unread = max(0, n)
         badge.count = unread
-        badge.isHidden = unread == 0
+        badge.isHidden = unread == 0 || !prefs.showUnreadBadge
         if unread > 0 { layoutBadge() }
     }
 

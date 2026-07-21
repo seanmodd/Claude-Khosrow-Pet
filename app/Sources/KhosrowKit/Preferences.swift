@@ -33,6 +33,13 @@ public struct Preferences: Codable, Equatable {
     /// Text/chrome size multiplier for the pill, popups, notification, ring, and
     /// badge — independent of `scale` (which sizes the pet sprite).
     public var uiFontScale: Double
+    /// Whether the pet window is shown at all.
+    public var showPet: Bool
+    /// Chrome visibility toggles (Configuration ▸ Appearance).
+    public var showMoodPill: Bool
+    public var showProgressRing: Bool
+    public var showUnreadBadge: Bool
+    public var showNotificationBubbles: Bool
 
     public static let scaleRange: ClosedRange<Double> = 0.25...4.0
     public static let speedRange: ClosedRange<Double> = 0.1...4.0
@@ -52,7 +59,12 @@ public struct Preferences: Codable, Equatable {
                 currentSkin: String = "khosrow",
                 watchSession: String = "auto",
                 watchSessionLabel: String = "",
-                uiFontScale: Double = 1.0) {
+                uiFontScale: Double = 1.0,
+                showPet: Bool = true,
+                showMoodPill: Bool = true,
+                showProgressRing: Bool = true,
+                showUnreadBadge: Bool = true,
+                showNotificationBubbles: Bool = true) {
         self.scale = scale
         self.speedMultiplier = speedMultiplier
         self.clickThrough = clickThrough
@@ -67,6 +79,11 @@ public struct Preferences: Codable, Equatable {
         self.watchSession = watchSession
         self.watchSessionLabel = watchSessionLabel
         self.uiFontScale = uiFontScale
+        self.showPet = showPet
+        self.showMoodPill = showMoodPill
+        self.showProgressRing = showProgressRing
+        self.showUnreadBadge = showUnreadBadge
+        self.showNotificationBubbles = showNotificationBubbles
     }
 
     /// Decode tolerantly so older saved preferences (missing the newer keys)
@@ -88,6 +105,11 @@ public struct Preferences: Codable, Equatable {
         watchSession = try c.decodeIfPresent(String.self, forKey: .watchSession) ?? d.watchSession
         watchSessionLabel = try c.decodeIfPresent(String.self, forKey: .watchSessionLabel) ?? d.watchSessionLabel
         uiFontScale = try c.decodeIfPresent(Double.self, forKey: .uiFontScale) ?? d.uiFontScale
+        showPet = try c.decodeIfPresent(Bool.self, forKey: .showPet) ?? d.showPet
+        showMoodPill = try c.decodeIfPresent(Bool.self, forKey: .showMoodPill) ?? d.showMoodPill
+        showProgressRing = try c.decodeIfPresent(Bool.self, forKey: .showProgressRing) ?? d.showProgressRing
+        showUnreadBadge = try c.decodeIfPresent(Bool.self, forKey: .showUnreadBadge) ?? d.showUnreadBadge
+        showNotificationBubbles = try c.decodeIfPresent(Bool.self, forKey: .showNotificationBubbles) ?? d.showNotificationBubbles
     }
 
     /// Return a copy with all values clamped into their valid ranges.
