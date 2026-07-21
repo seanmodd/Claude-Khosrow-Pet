@@ -132,6 +132,39 @@ def remove_background(im: Image.Image, interior_seeds=None) -> Image.Image:
                 ap[x, y] = 0
 
     alpha = keep_significant_regions(alpha)
+
+    # HOLE REPAIR — the guarantee that makes interior transparency impossible:
+    # background is ONLY what connects to the image border through transparent
+    # pixels. Any transparent pocket enclosed by the figure (a beard shadow,
+    # the waist sash, a dark fold the keyer mistook for navy) is restored to
+    # full opacity. Deliberate enclosed pockets (e.g. between raised arms)
+    # survive only if their pixels truly match the background colour.
+    from collections import deque as _dq
+    outside = bytearray(w * h)
+    q = _dq()
+    for x in range(w):
+        for y in (0, h - 1):
+            if ap[x, y] < 128 and not outside[y * w + x]:
+                outside[y * w + x] = 1; q.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            if ap[x, y] < 128 and not outside[y * w + x]:
+                outside[y * w + x] = 1; q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x+1,y),(x-1,y),(x,y+1),(x,y-1)):
+            if 0 <= nx < w and 0 <= ny < h and not outside[ny*w+nx] and ap[nx, ny] < 128:
+                outside[ny*w+nx] = 1; q.append((nx, ny))
+    src = im.load()
+    for y in range(h):
+        for x in range(w):
+            if ap[x, y] < 255 and not outside[y*w+x]:
+                p_ = src[x, y]
+                d = abs(p_[0]-bg[0]) + abs(p_[1]-bg[1]) + abs(p_[2]-bg[2])
+                if d > 36:                     # real art, wrongly keyed: restore
+                    ap[x, y] = 255
+                # else: genuine enclosed background pocket — keep transparent
+
     # Gentle edge feather only (NO erosion — erosion was eating figure detail).
     alpha = alpha.filter(ImageFilter.GaussianBlur(0.5))
 
