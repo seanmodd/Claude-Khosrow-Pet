@@ -356,13 +356,17 @@ def auto_face(frames):
     return out
 
 
-def register_frames(frames):
-    """Offsets (per frame) aligning everything to frame 1 using the LOWER 45%%
-    of the silhouette (legs/base are the static part; arms/head move)."""
+def register_frames(frames, region="lower"):
+    """Offsets (per frame) aligning everything to frame 1 using the static
+    part of the silhouette: "lower" (legs) for standing figures, "upper"
+    (rider/torso) for a gallop whose legs move, or "full"."""
     def low_mask(im):
         a = im.split()[3].point(lambda v: 255 if v >= 96 else 0)
-        top = int(im.height * 0.55)
-        return a.crop((0, top, im.width, im.height))
+        if region == "lower":
+            return a.crop((0, int(im.height * 0.55), im.width, im.height))
+        if region == "upper":
+            return a.crop((0, 0, im.width, int(im.height * 0.55)))
+        return a
 
     ref_full = low_mask(frames[0])
     offsets = [(0, 0)]
@@ -480,6 +484,8 @@ def main():
                     help="auto-detect cells from content gaps (handles irregular grids)")
     ap.add_argument("--cells", default="",
                     help="explicit cell boxes as JSON [[l,t,r,b],...] (overrides --auto/--rows/--cols)")
+    ap.add_argument("--register", default="lower", choices=["lower", "upper", "full"],
+                    help="which silhouette band anchors frame registration")
     ap.add_argument("--auto-face", action="store_true", dest="auto_face",
                     help="mirror frames whose silhouette matches frame 1 better flipped")
     ap.add_argument("--flip", default="",
@@ -549,7 +555,7 @@ def main():
         norm.append(f)
     frames = norm
 
-    offsets = register_frames(frames)
+    offsets = register_frames(frames, region=args.register)
     # Registration must EARN its keep: if the frames were already aligned
     # (some sheets are), shifting them adds wobble instead of removing it.
     def total_drift(offs):
