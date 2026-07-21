@@ -40,6 +40,9 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var testConsole: TestConsoleWindowController?
+    private var configWindow: ConfigurationWindowController?
+    let configStore = ConfigurationStore()
+    private(set) var configProfile = ConfigurationProfile.builtInDefault()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu-bar app (no Dock icon) by default. Set KHOSROW_FORCE_REGULAR=1 to
@@ -95,6 +98,26 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if prefs.watchMode { startWatcher() }
         refreshSessionsAsync()   // populate the session picker in the background
+
+        configProfile = configStore.load()
+    }
+
+    /// Re-activating the app (e.g. launching it again from Finder/Spotlight —
+    /// the closest supported "app icon" interaction for a Dock-less menu-bar
+    /// accessory) opens or focuses the Configuration window.
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        openConfiguration()
+        return true
+    }
+
+    /// Open (or focus) the Configuration window.
+    @objc func openConfiguration() {
+        if configWindow == nil {
+            let c = ConfigurationWindowController()
+            configWindow = c
+        }
+        configWindow?.show()
     }
 
     // MARK: Sizing
@@ -944,6 +967,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(skinItem)
         menu.addItem(.separator())
 
+        let configItem = makeItem("Configure Khosrow…", #selector(openConfiguration), ",")
+        configItem.toolTip = "All settings in one place: appearance, moods, visual acts, hook mapping, and diagnostics."
+        menu.addItem(configItem)
         menu.addItem(makeItem("Animation Test Console…", #selector(openTestConsole), "t"))
         menu.addItem(makeItem("Reset Position", #selector(resetPosition), ""))
         menu.addItem(.separator())
